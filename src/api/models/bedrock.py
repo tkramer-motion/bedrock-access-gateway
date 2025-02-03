@@ -174,42 +174,37 @@ class BedrockModel(BaseChatModel):
             logger.info("Bedrock request: " + json.dumps(str(args)))
 
         kbs = [{"name": row["name"], "knowledgeBaseId": row["knowledgeBaseId"]} for row in bedrock_agent_client.list_knowledge_bases()["knowledgeBaseSummaries"] if row["status"] in ("ACTIVE", "UPDATING")]
-        used_kbs = set()
-        for message in args["messages"]:
-            for kb in kbs:
-                if f'@{kb["name"]}' in message["content"]:
-                    message["content"] = message["content"].replace(f'@{kb["name"]}', '')
-                    used_kbs.add(kb["knowledgeBaseId"])
-
-        response = bedrock_agent_runtime.retrieve_and_generate(
-            input={
-                "text": args["messages"][-1]["content"],
-            },
-            retrieveAndGenerateConfiguration={
-                "type": "KNOWLEDGE_BASE",
-                "knowledgeBaseConfiguration": {
-                    'knowledgeBaseId': next(iter(used_kbs)),
-                    "modelArn": args["modelId"],
-                    "retrievalConfiguration": {
-                        "vectorSearchConfiguration": {
-                            "numberOfResults": 5
+        message = args["messages"][-1]["content"]
+        for kb in kbs:
+            if f'@{kb["name"]}' in message["content"]:
+                return bedrock_agent_runtime.retrieve_and_generate(
+                    input={
+                        "text": message.replace(f'@{kb["name"]}', '')
+                    },
+                    retrieveAndGenerateConfiguration={
+                        "type": "KNOWLEDGE_BASE",
+                        "knowledgeBaseConfiguration": {
+                            'knowledgeBaseId': kb["knowledgeBaseId"],
+                            "modelArn": args["modelId"],
+                            "retrievalConfiguration": {
+                                "vectorSearchConfiguration": {
+                                    "numberOfResults": 5
+                                }
+                            }
                         }
                     }
-                }
-            }
-        )
-
-        # try:
-        #     if stream:
-        #         response = bedrock_runtime.converse_stream(**args)
-        #     else:
-        #         response = bedrock_runtime.converse(**args)
-        # except bedrock_runtime.exceptions.ValidationException as e:
-        #     logger.error("Validation Error: " + str(e))
-        #     raise HTTPException(status_code=400, detail=str(e))
-        # except Exception as e:
-        #     logger.error(e)
-        #     raise HTTPException(status_code=500, detail=str(e))
+                )
+        try:
+            if stream:
+                response = bedrock_runtime.converse_stream(**args)
+            else:
+                response = bedrock_runtime.converse(**args)
+        except bedrock_runtime.exceptions.ValidationException as e:
+            logger.error("Validation Error: " + str(e))
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.error(e)
+            raise HTTPException(status_code=500, detail=str(e))
         return response
 
     def chat(self, chat_request: ChatRequest) -> ChatResponse:

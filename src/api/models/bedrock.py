@@ -183,7 +183,7 @@ class BedrockModel(BaseChatModel):
 
         response = bedrock_agent_runtime.retrieve_and_generate(
             input={
-                "text": chat_request.messages[-1]["content"],
+                "text": args["messages"][-1]["content"],
             },
             retrieveAndGenerateConfiguration={
                 "type": "KNOWLEDGE_BASE",

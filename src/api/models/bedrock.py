@@ -176,7 +176,7 @@ class BedrockModel(BaseChatModel):
         kbs = [{"name": row["name"], "knowledgeBaseId": row["knowledgeBaseId"]} for row in bedrock_agent_client.list_knowledge_bases()["knowledgeBaseSummaries"] if row["status"] in ("ACTIVE", "UPDATING")]
         message = args["messages"][-1]["content"]
         for kb in kbs:
-            if f'@{kb["name"]}' in message["content"]:
+            if f'@{kb["name"]}' in message:
                 return bedrock_agent_runtime.retrieve_and_generate(
                     input={
                         "text": message.replace(f'@{kb["name"]}', '')

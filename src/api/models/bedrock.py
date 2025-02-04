@@ -173,27 +173,31 @@ class BedrockModel(BaseChatModel):
         if DEBUG:
             logger.info("Bedrock request: " + json.dumps(str(args)))
 
-        kbs = [{"name": row["name"], "knowledgeBaseId": row["knowledgeBaseId"]} for row in bedrock_agent_client.list_knowledge_bases()["knowledgeBaseSummaries"] if row["status"] in ("ACTIVE", "UPDATING")]
-        message = args["messages"][-1]["content"]
+        kbs = [{"name": row["name"], "knowledgeBaseId": row["knowledgeBaseId"]} for row in
+               bedrock_agent_client.list_knowledge_bases()["knowledgeBaseSummaries"] if
+               row["status"] in ("ACTIVE", "UPDATING")]
+        message = args["messages"][-1]["content"][0]["text"]
         for kb in kbs:
             if f'@{kb["name"]}' in message:
-                return bedrock_agent_runtime.retrieve_and_generate(
-                    input={
-                        "text": message.replace(f'@{kb["name"]}', '')
+                retrieve_response = bedrock_agent_runtime.retrieve(
+                    retrievalQuery={
+                        'text': message.replace(f'@{kb["name"]}', '')
                     },
-                    retrieveAndGenerateConfiguration={
-                        "type": "KNOWLEDGE_BASE",
-                        "knowledgeBaseConfiguration": {
-                            'knowledgeBaseId': kb["knowledgeBaseId"],
-                            "modelArn": args["modelId"],
-                            "retrievalConfiguration": {
-                                "vectorSearchConfiguration": {
-                                    "numberOfResults": 5
-                                }
-                            }
+                    knowledgeBaseId=kb["knowledgeBaseId"],
+                    retrievalConfiguration={
+                        'vectorSearchConfiguration': {
+                            'numberOfResults': 5,
                         }
                     }
                 )
+                args["messages"][-1]["content"].append({"document": {
+                    'format': 'txt',
+                    'name': 'string',
+                    'source': {
+                        'bytes': retrieve_response['retrievalResults'][0]['content']['text'].encode()
+                    }
+                }
+                })
         try:
             if stream:
                 response = bedrock_runtime.converse_stream(**args)

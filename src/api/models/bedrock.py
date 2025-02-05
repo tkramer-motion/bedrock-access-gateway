@@ -125,6 +125,14 @@ def list_bedrock_models() -> dict:
                     'modalities': input_modalities
                 }
 
+        response = bedrock_client.list_imported_models()
+
+        for model in response['modelSummaries']:
+            model_id = model['modelArn']
+            model_list[model_id] = {
+                'modalities': ['TEXT']
+            }
+
     except Exception as e:
         logger.error(f"Unable to list models: {str(e)}")
 

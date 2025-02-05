@@ -178,6 +178,7 @@ class BedrockModel(BaseChatModel):
         message = args["messages"][-1]["content"][0]["text"]
         for kb in kbs:
             if f'@{kb["name"]}' in message:
+                logger.info(f"Using knowledge base {kb['name']} for text message: {message}")
                 retrieve_response = bedrock_agent_runtime.retrieve(
                     retrievalQuery={
                         'text': message.replace(f'@{kb["name"]}', '')
@@ -189,6 +190,7 @@ class BedrockModel(BaseChatModel):
                         }
                     }
                 )
+                logger.info(f"Got search results of {retrieve_response['retrievalResults'][0]['content']['text']}")
                 args["messages"][-1]["content"].append({"document": {
                     'format': 'txt',
                     'name': 'string',

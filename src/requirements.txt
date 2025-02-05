@@ -1,3 +1,5 @@
+--extra-index-url https://pypi.relaytxinternal.com/
+
 fastapi==0.115.6
 pydantic==2.7.1
 uvicorn==0.29.0

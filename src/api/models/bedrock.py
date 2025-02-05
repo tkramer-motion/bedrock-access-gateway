@@ -506,8 +506,7 @@ class BedrockModel(BaseChatModel):
             inference_config["stopSequences"] = stop
 
         config = {"modelId": chat_request.model, "messages": messages, "system": system_prompts, "inferenceConfig": inference_config}
-        logger.info(messages[-1])
-        if '@tools' in messages[-1]["content"][0]["text"]:
+        if '@tools' in messages[-1]["content"][0].get("text", ""):
             config["toolConfig"] = {
                 "tools": [{
                     "toolSpec": {

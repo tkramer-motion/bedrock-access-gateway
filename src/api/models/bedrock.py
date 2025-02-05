@@ -12,6 +12,7 @@ import requests
 import tiktoken
 from botocore.config import Config
 from fastapi import HTTPException
+from relay.db.research.queries import get_results_by_compound_name
 
 from api.models.base import BaseChatModel, BaseEmbeddingsModel
 from api.schema import (
@@ -35,9 +36,7 @@ from api.schema import (
     EmbeddingsRequest,
     EmbeddingsResponse,
     EmbeddingsUsage,
-    Embedding,
-
-)
+    Embedding, )
 from api.setting import DEBUG, AWS_REGION, ENABLE_CROSS_REGION_INFERENCE, DEFAULT_MODEL
 
 logger = logging.getLogger(__name__)
@@ -194,6 +193,29 @@ class BedrockModel(BaseChatModel):
         output_tokens = response["usage"]["outputTokens"]
         finish_reason = response["stopReason"]
 
+        if finish_reason == "tool_use":
+            for part in output_message["content"]:
+                if "toolUse" in part:
+                    tool = part["toolUse"]
+                    toolUseId = tool["toolUseId"]
+                    results = get_results_by_compound_name(tool["input"]["rtx"])
+                    filtered_results = []
+                    for row in results:
+                        if "result_value" in row:
+                            new_row = {"assay_type": row['assay_type_name'], "result_type": row['result_type_name'],
+                                       "result_units": row['result_unit_name'], "assay_name": row['assay_name'],
+                                       "value": row["result_value"]}
+                            if row.get("operator"):
+                                new_row["operator"] = row["operator"]
+                            filtered_results.append(new_row)
+
+                    args = chat_request.model_dump()
+                    del args["messages"]
+                    args["messages"] = chat_request.messages + [output_message, ToolMessage(
+                        tool_call_id=toolUseId,
+                        content={"assay_data": filtered_results})]
+                    return self.chat(ChatRequest(**args))
+
         chat_response = self._create_response(
             model=chat_request.model,
             message_id=message_id,
@@ -204,12 +226,17 @@ class BedrockModel(BaseChatModel):
         )
         if DEBUG:
             logger.info("Proxy response :" + chat_response.model_dump_json())
+
         return chat_response
 
     def chat_stream(self, chat_request: ChatRequest) -> AsyncIterable[bytes]:
         """Default implementation for Chat Stream API"""
         response = self._invoke_bedrock(chat_request, stream=True)
         message_id = self.generate_message_id()
+
+        toolUseId = None
+        tool_args = []
+        chat_reponse = []
 
         stream = response.get("stream")
         for chunk in stream:
@@ -221,6 +248,38 @@ class BedrockModel(BaseChatModel):
             if DEBUG:
                 logger.info("Proxy response :" + stream_response.model_dump_json())
             if stream_response.choices:
+                if stream_response.choices[0].delta.role == "assistant":
+                    chat_reponse = []
+                if stream_response.choices[0].delta.content:
+                    chat_reponse.append(stream_response.choices[0].delta.content)
+
+                if stream_response.choices[0].finish_reason == "tool_calls":
+                    function_args = json.loads("".join(tool_args))
+                    results = get_results_by_compound_name(function_args["rtx"])
+                    filtered_results = []
+                    for row in results:
+                        if "result_value" in row:
+                            new_row = {"assay_type": row['assay_type_name'], "result_type": row['result_type_name'],
+                                       "result_units": row['result_unit_name'], "assay_name": row['assay_name'],
+                                       "value": row["result_value"]}
+                            if row.get("operator"):
+                                new_row["operator"] = row["operator"]
+                            filtered_results.append(new_row)
+
+                    args = chat_request.model_dump()
+                    del args["messages"]
+                    args["messages"] = chat_request.messages + [{'content': [{'text': "".join(chat_reponse)}, {'toolUse': {'input': json.loads("".join(tool_args)), 'name': 'rtx_assay_data', 'toolUseId': toolUseId}}], 'role': 'assistant'}, ToolMessage(
+                        tool_call_id=toolUseId,
+                        content={"assay_data": filtered_results})]
+                    yield self.stream_response_to_bytes()
+                    yield from self.chat_stream(ChatRequest(**args))
+                    return
+                elif stream_response.choices[0].delta.tool_calls:
+                    tool: ToolCall = stream_response.choices[0].delta.tool_calls[0]
+                    if tool.id is not None:
+                        toolUseId = tool.id
+                    elif tool.function and tool.function.arguments:
+                        tool_args.append(tool.function.arguments)
                 yield self.stream_response_to_bytes(stream_response)
             elif (
                     chat_request.stream_options
@@ -249,11 +308,12 @@ class BedrockModel(BaseChatModel):
 
         system_prompts = []
         for message in chat_request.messages:
-            if message.role != "system":
+            if hasattr(message, "role") and message.role != "system":
                 # ignore system messages here
                 continue
-            assert isinstance(message.content, str)
-            system_prompts.append({"text": message.content})
+            if hasattr(message, "content"):
+                assert isinstance(message.content, str)
+                system_prompts.append({"text": message.content})
 
         return system_prompts
 
@@ -319,17 +379,18 @@ class BedrockModel(BaseChatModel):
                             {
                                 "toolResult": {
                                     "toolUseId": message.tool_call_id,
-                                    "content": [{"text": message.content}],
+                                    "content": [{"json": message.content}],
                                 }
                             }
                         ],
                     }
                 )
-
+            elif isinstance(message, dict):
+                messages.append(message)
             else:
                 # ignore others, such as system messages
                 continue
-        return self._reframe_multi_payloard(messages)
+        return messages  # self._reframe_multi_payloard(messages)
 
     def _reframe_multi_payloard(self, messages: list) -> list:
         """ Receive messages and reformat them to comply with the Claude format
@@ -414,34 +475,29 @@ class BedrockModel(BaseChatModel):
                 stop = [stop]
             inference_config["stopSequences"] = stop
 
-        args = {
-            "modelId": chat_request.model,
-            "messages": messages,
-            "system": system_prompts,
-            "inferenceConfig": inference_config,
-        }
-        # add tool config
-        if chat_request.tools:
-            args["toolConfig"] = {
-                "tools": [
-                    self._convert_tool_spec(t.function) for t in chat_request.tools
-                ]
-            }
-
-            if chat_request.tool_choice and not chat_request.model.startswith("meta.llama3-1-"):
-                if isinstance(chat_request.tool_choice, str):
-                    # auto (default) is mapped to {"auto" : {}}
-                    # required is mapped to {"any" : {}}
-                    if chat_request.tool_choice == "required":
-                        args["toolConfig"]["toolChoice"] = {"any": {}}
-                    else:
-                        args["toolConfig"]["toolChoice"] = {"auto": {}}
-                else:
-                    # Specific tool to use
-                    assert "function" in chat_request.tool_choice
-                    args["toolConfig"]["toolChoice"] = {
-                        "tool": {"name": chat_request.tool_choice["function"].get("name", "")}}
-        return args
+        return {"modelId": chat_request.model, "messages": messages, "system": system_prompts,
+                "inferenceConfig": inference_config, "toolConfig": {
+                "tools": [{
+                    "toolSpec": {
+                        "name": "rtx_assay_data",
+                        "description": "Get assay data for a RTX",
+                        "inputSchema": {
+                            "json": {
+                                "type": "object",
+                                "properties": {
+                                    "rtx": {
+                                        "type": "string",
+                                        "description": "The RTX number for the compound that you want assay data for. Example calls signs are RTX-1338436 and RTX-1338437."
+                                    }
+                                },
+                                "required": [
+                                    "rtx"
+                                ]
+                            }
+                        }
+                    }
+                }]
+            }}
 
     def _create_response(
             self,

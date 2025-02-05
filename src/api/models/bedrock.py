@@ -54,6 +54,9 @@ bedrock_client = boto3.client(
     config=config,
 )
 
+bedrock_agent_client = boto3.client('bedrock-agent', region_name=AWS_REGION, config=config)
+bedrock_agent_runtime = boto3.client('bedrock-agent-runtime', region_name=AWS_REGION, config=config)
+
 
 def get_inference_region_prefix():
     if AWS_REGION.startswith('ap-'):
@@ -169,6 +172,33 @@ class BedrockModel(BaseChatModel):
         if DEBUG:
             logger.info("Bedrock request: " + json.dumps(str(args)))
 
+        kbs = [{"name": row["name"], "knowledgeBaseId": row["knowledgeBaseId"]} for row in
+               bedrock_agent_client.list_knowledge_bases()["knowledgeBaseSummaries"] if
+               row["status"] in ("ACTIVE", "UPDATING")]
+        message = args["messages"][-1]["content"][0].get("text", "")
+        for kb in kbs:
+            if f'@{kb["name"]}' in message:
+                logger.info(f"Using knowledge base {kb['name']} for text message: {message}")
+                retrieve_response = bedrock_agent_runtime.retrieve(
+                    retrievalQuery={
+                        'text': message.replace(f'@{kb["name"]}', '')
+                    },
+                    knowledgeBaseId=kb["knowledgeBaseId"],
+                    retrievalConfiguration={
+                        'vectorSearchConfiguration': {
+                            'numberOfResults': 5,
+                        }
+                    }
+                )
+                logger.info(f"Got search results of {retrieve_response['retrievalResults'][0]['content']['text']}")
+                args["messages"][-1]["content"].append({"document": {
+                    'format': 'txt',
+                    'name': 'string',
+                    'source': {
+                        'bytes': retrieve_response['retrievalResults'][0]['content']['text'].encode()
+                    }
+                }
+                })
         try:
             if stream:
                 response = bedrock_runtime.converse_stream(**args)
@@ -475,8 +505,9 @@ class BedrockModel(BaseChatModel):
                 stop = [stop]
             inference_config["stopSequences"] = stop
 
-        return {"modelId": chat_request.model, "messages": messages, "system": system_prompts,
-                "inferenceConfig": inference_config, "toolConfig": {
+        config = {"modelId": chat_request.model, "messages": messages, "system": system_prompts, "inferenceConfig": inference_config}
+        if '@tools' in messages[-1]["content"][0].get("text", ""):
+            config["toolConfig"] = {
                 "tools": [{
                     "toolSpec": {
                         "name": "rtx_assay_data",
@@ -497,7 +528,8 @@ class BedrockModel(BaseChatModel):
                         }
                     }
                 }]
-            }}
+            }
+        return config
 
     def _create_response(
             self,

@@ -175,7 +175,9 @@ class BedrockModel(BaseChatModel):
         kbs = [{"name": row["name"], "knowledgeBaseId": row["knowledgeBaseId"]} for row in
                bedrock_agent_client.list_knowledge_bases()["knowledgeBaseSummaries"] if
                row["status"] in ("ACTIVE", "UPDATING")]
+        logger.info(f"Knowledge Bases {kbs}")
         message = args["messages"][-1]["content"][0]["text"]
+        logger.info(f"Message: {message}")
         for kb in kbs:
             if f'@{kb["name"]}' in message:
                 logger.info(f"Using knowledge base {kb['name']} for text message: {message}")

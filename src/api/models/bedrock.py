@@ -507,8 +507,9 @@ class BedrockModel(BaseChatModel):
                 stop = [stop]
             inference_config["stopSequences"] = stop
 
-        return {"modelId": chat_request.model, "messages": messages, "system": system_prompts,
-                "inferenceConfig": inference_config, "toolConfig": {
+        config = {"modelId": chat_request.model, "messages": messages, "system": system_prompts, "inferenceConfig": inference_config}
+        if '@tools' in messages[-1]["content"][0]["text"]:
+            config["toolConfig"] = {
                 "tools": [{
                     "toolSpec": {
                         "name": "rtx_assay_data",
@@ -529,7 +530,8 @@ class BedrockModel(BaseChatModel):
                         }
                     }
                 }]
-            }}
+            }
+        return config
 
     def _create_response(
             self,

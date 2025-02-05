@@ -506,29 +506,31 @@ class BedrockModel(BaseChatModel):
             inference_config["stopSequences"] = stop
 
         config = {"modelId": chat_request.model, "messages": messages, "system": system_prompts, "inferenceConfig": inference_config}
-        if '@tools' in messages[-1]["content"][0].get("text", ""):
-            config["toolConfig"] = {
-                "tools": [{
-                    "toolSpec": {
-                        "name": "rtx_assay_data",
-                        "description": "Get assay data for a RTX",
-                        "inputSchema": {
-                            "json": {
-                                "type": "object",
-                                "properties": {
-                                    "rtx": {
-                                        "type": "string",
-                                        "description": "The RTX number for the compound that you want assay data for. Example calls signs are RTX-1338436 and RTX-1338437."
-                                    }
-                                },
-                                "required": [
-                                    "rtx"
-                                ]
+        for message in messages:
+            if '@tools' in message["content"][0].get("text", ""):
+                config["toolConfig"] = {
+                    "tools": [{
+                        "toolSpec": {
+                            "name": "rtx_assay_data",
+                            "description": "Get assay data for a RTX",
+                            "inputSchema": {
+                                "json": {
+                                    "type": "object",
+                                    "properties": {
+                                        "rtx": {
+                                            "type": "string",
+                                            "description": "The RTX number for the compound that you want assay data for. Example calls signs are RTX-1338436 and RTX-1338437."
+                                        }
+                                    },
+                                    "required": [
+                                        "rtx"
+                                    ]
+                                }
                             }
                         }
-                    }
-                }]
-            }
+                    }]
+                }
+                break
         return config
 
     def _create_response(

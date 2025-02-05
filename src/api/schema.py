@@ -1,5 +1,5 @@
 import time
-from typing import Literal, Iterable
+from typing import Literal, Iterable, Any
 
 from pydantic import BaseModel, Field
 
@@ -32,7 +32,6 @@ class TextContent(BaseModel):
     type: Literal["text"] = "text"
     text: str
 
-
 class ImageUrl(BaseModel):
     url: str
     detail: str | None = "auto"
@@ -54,18 +53,16 @@ class UserMessage(BaseModel):
     role: Literal["user"] = "user"
     content: str | list[TextContent | ImageContent]
 
+class ToolMessage(BaseModel):
+    role: Literal["tool"] = "tool"
+    content: dict | list
+    tool_call_id: str
 
 class AssistantMessage(BaseModel):
     name: str | None = None
     role: Literal["assistant"] = "assistant"
-    content: str | list[TextContent | ImageContent] | None
+    content: str | list[TextContent | ImageContent | ToolMessage] | None
     tool_calls: list[ToolCall] | None = None
-
-
-class ToolMessage(BaseModel):
-    role: Literal["tool"] = "tool"
-    content: str
-    tool_call_id: str
 
 
 class Function(BaseModel):
@@ -84,7 +81,7 @@ class StreamOptions(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    messages: list[SystemMessage | UserMessage | AssistantMessage | ToolMessage]
+    messages: list[SystemMessage | UserMessage | AssistantMessage | dict | ToolMessage]
     model: str
     frequency_penalty: float | None = Field(default=0.0, le=2.0, ge=-2.0)  # Not used
     presence_penalty: float | None = Field(default=0.0, le=2.0, ge=-2.0)  # Not used
@@ -93,7 +90,7 @@ class ChatRequest(BaseModel):
     temperature: float | None = Field(default=1.0, le=2.0, ge=0.0)
     top_p: float | None = Field(default=1.0, le=1.0, ge=0.0)
     user: str | None = None  # Not used
-    max_tokens: int | None = 2048
+    max_tokens: int | None = 8192
     n: int | None = 1  # Not used
     tools: list[Tool] | None = None
     tool_choice: str | object = "auto"

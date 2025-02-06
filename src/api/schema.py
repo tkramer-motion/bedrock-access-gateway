@@ -90,7 +90,7 @@ class ChatRequest(BaseModel):
     temperature: float | None = Field(default=1.0, le=2.0, ge=0.0)
     top_p: float | None = Field(default=1.0, le=1.0, ge=0.0)
     user: str | None = None  # Not used
-    max_tokens: int | None = 8192
+    max_tokens: int | None = 4096
     n: int | None = 1  # Not used
     tools: list[Tool] | None = None
     tool_choice: str | object = "auto"

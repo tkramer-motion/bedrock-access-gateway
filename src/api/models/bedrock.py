@@ -499,6 +499,9 @@ class BedrockModel(BaseChatModel):
             "topP": chat_request.top_p,
         }
 
+        if chat_request.model == "us.anthropic.claude-3-5-sonnet-20241022-v2:0":
+            inference_config["maxTokens"] = 8192
+
         if chat_request.stop is not None:
             stop = chat_request.stop
             if isinstance(stop, str):

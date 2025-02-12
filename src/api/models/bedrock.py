@@ -191,14 +191,15 @@ class BedrockModel(BaseChatModel):
                     }
                 )
                 logger.info(f"Got search results of {retrieve_response['retrievalResults'][0]['content']['text']}")
-                args["messages"][-1]["content"].append({"document": {
-                    'format': 'txt',
-                    'name': 'string',
-                    'source': {
-                        'bytes': retrieve_response['retrievalResults'][0]['content']['text'].encode()
+                for i, row in enumerate(retrieve_response['retrievalResults']):
+                    args["messages"][-1]["content"].append({"document": {
+                        'format': 'txt',
+                        'name': f'string{i + 1}',
+                        'source': {
+                            'bytes': row['content']['text'].encode()
+                        }
                     }
-                }
-                })
+                    })
         try:
             if stream:
                 response = bedrock_runtime.converse_stream(**args)

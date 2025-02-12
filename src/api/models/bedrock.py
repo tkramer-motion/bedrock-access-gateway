@@ -201,6 +201,7 @@ class BedrockModel(BaseChatModel):
                     }
                     })
         try:
+            logger.info(f"Invoking bedrock agent with {args}")
             if stream:
                 response = bedrock_runtime.converse_stream(**args)
             else:

@@ -177,7 +177,7 @@ class BedrockModel(BaseChatModel):
                row["status"] in ("ACTIVE", "UPDATING")]
         message = args["messages"][-1]["content"][0].get("text", "")
         for kb in kbs:
-            if f'@{kb["name"]}' in message:
+            if f'@{kb["name"]}' in message.split():
                 logger.info(f"Using knowledge base {kb['name']} for text message: {message}")
                 retrieve_response = bedrock_agent_runtime.retrieve(
                     retrievalQuery={

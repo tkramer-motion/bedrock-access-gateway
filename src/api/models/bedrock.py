@@ -190,7 +190,7 @@ class BedrockModel(BaseChatModel):
                         }
                     }
                 )
-                logger.info(f"Got search results of {retrieve_response['retrievalResults'][0]['content']['text']}")
+                logger.info(f"Got search results of {[row['content']['text'] for row in retrieve_response['retrievalResults']]}")
                 for i, row in enumerate(retrieve_response['retrievalResults']):
                     args["messages"][-1]["content"].append({"document": {
                         'format': 'txt',

@@ -186,7 +186,7 @@ class BedrockModel(BaseChatModel):
                     knowledgeBaseId=kb["knowledgeBaseId"],
                     retrievalConfiguration={
                         'vectorSearchConfiguration': {
-                            'numberOfResults': 5,
+                            'numberOfResults': 10,
                         }
                     }
                 )

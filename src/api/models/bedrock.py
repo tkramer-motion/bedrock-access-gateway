@@ -186,7 +186,7 @@ class BedrockModel(BaseChatModel):
                     knowledgeBaseId=kb["knowledgeBaseId"],
                     retrievalConfiguration={
                         'vectorSearchConfiguration': {
-                            'numberOfResults': 10,
+                            'numberOfResults': 5,
                         }
                     }
                 )
@@ -201,7 +201,6 @@ class BedrockModel(BaseChatModel):
                     }
                     })
         try:
-            logger.info(f"Invoking bedrock agent with {args}")
             if stream:
                 response = bedrock_runtime.converse_stream(**args)
             else:

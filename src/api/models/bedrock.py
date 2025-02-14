@@ -1,10 +1,13 @@
 import base64
 import json
 import logging
+import os
 import re
 import time
 from abc import ABC
-from typing import AsyncIterable, Iterable, Literal
+from copy import deepcopy
+from functools import cache
+from typing import AsyncIterable, Iterable, Literal, Any
 
 import boto3
 import numpy as np
@@ -36,7 +39,7 @@ from api.schema import (
     EmbeddingsResponse,
     EmbeddingsUsage,
     Embedding, )
-from api.setting import DEBUG, AWS_REGION, ENABLE_CROSS_REGION_INFERENCE, DEFAULT_MODEL
+from api.setting import DEBUG, AWS_REGION
 
 logger = logging.getLogger(__name__)
 
@@ -86,56 +89,57 @@ def list_bedrock_models() -> dict:
         - ON_DEMAND models.
         - Cross-Region Inference Profiles (if enabled via Env)
     """
-    model_list = {}
-    try:
-        profile_list = []
-        if ENABLE_CROSS_REGION_INFERENCE:
-            # List system defined inference profile IDs
-            response = bedrock_client.list_inference_profiles(
-                maxResults=1000,
-                typeEquals='SYSTEM_DEFINED'
-            )
-            profile_list = [p['inferenceProfileId'] for p in response['inferenceProfileSummaries']]
+    # model_list = {}
+    # try:
+    #     profile_list = []
+    #     if ENABLE_CROSS_REGION_INFERENCE:
+    #         # List system defined inference profile IDs
+    #         response = bedrock_client.list_inference_profiles(
+    #             maxResults=1000,
+    #             typeEquals='SYSTEM_DEFINED'
+    #         )
+    #         profile_list = [p['inferenceProfileId'] for p in response['inferenceProfileSummaries']]
+    #
+    #     # List foundation models, only cares about text outputs here.
+    #     response = bedrock_client.list_foundation_models(
+    #         byOutputModality='TEXT'
+    #     )
+    #
+    #     for model in response['modelSummaries']:
+    #         model_id = model.get('modelId', 'N/A')
+    #         stream_supported = model.get('responseStreamingSupported', True)
+    #         status = model['modelLifecycle'].get('status', 'ACTIVE')
+    #
+    #         # currently, use this to filter out rerank models and legacy models
+    #         if not stream_supported or status != "ACTIVE":
+    #             continue
+    #
+    #         inference_types = model.get('inferenceTypesSupported', [])
+    #         input_modalities = model['inputModalities']
+    #         # Add on-demand model list
+    #         if 'ON_DEMAND' in inference_types:
+    #             model_list[model_id] = {
+    #                 'modalities': input_modalities
+    #             }
+    #
+    #         # Add cross-region inference model list.
+    #         profile_id = cr_inference_prefix + '.' + model_id
+    #         if profile_id in profile_list:
+    #             model_list[profile_id] = {
+    #                 'modalities': input_modalities
+    #             }
+    #
+    # except Exception as e:
+    #     logger.error(f"Unable to list models: {str(e)}")
+    #
+    # if not model_list:
+    #     # In case stack not updated.
+    #     model_list[DEFAULT_MODEL] = {
+    #         'modalities': ["TEXT", "IMAGE"]
+    #     }
 
-        # List foundation models, only cares about text outputs here.
-        response = bedrock_client.list_foundation_models(
-            byOutputModality='TEXT'
-        )
-
-        for model in response['modelSummaries']:
-            model_id = model.get('modelId', 'N/A')
-            stream_supported = model.get('responseStreamingSupported', True)
-            status = model['modelLifecycle'].get('status', 'ACTIVE')
-
-            # currently, use this to filter out rerank models and legacy models
-            if not stream_supported or status != "ACTIVE":
-                continue
-
-            inference_types = model.get('inferenceTypesSupported', [])
-            input_modalities = model['inputModalities']
-            # Add on-demand model list
-            if 'ON_DEMAND' in inference_types:
-                model_list[model_id] = {
-                    'modalities': input_modalities
-                }
-
-            # Add cross-region inference model list.
-            profile_id = cr_inference_prefix + '.' + model_id
-            if profile_id in profile_list:
-                model_list[profile_id] = {
-                    'modalities': input_modalities
-                }
-
-    except Exception as e:
-        logger.error(f"Unable to list models: {str(e)}")
-
-    if not model_list:
-        # In case stack not updated.
-        model_list[DEFAULT_MODEL] = {
-            'modalities': ["TEXT", "IMAGE"]
-        }
-
-    return model_list
+    # return model_list
+    return {'us.anthropic.claude-3-5-sonnet-20241022-v2:0': {'modalities': ['TEXT', 'IMAGE']}}
 
 
 # Initialize the model list.
@@ -232,7 +236,7 @@ class BedrockModel(BaseChatModel):
                     toolUseId = tool["toolUseId"]
 
                     response = lambda_client.invoke(
-                        FunctionName='rtx_assay_data-ba0197c',
+                        FunctionName=self.get_tool_map()[tool["name"]],
                         InvocationType='RequestResponse',
                         Payload=json.dumps({"RTX": tool["input"]["rtx"]}).encode(),
                     )
@@ -294,6 +298,7 @@ class BedrockModel(BaseChatModel):
 
                 if stream_response.choices[0].finish_reason == "tool_calls":
                     function_args = json.loads("".join(tool_args))
+
                     results = get_results_by_compound_name(function_args["rtx"])
                     filtered_results = []
                     for row in results:
@@ -490,6 +495,22 @@ class BedrockModel(BaseChatModel):
 
         return reformatted_messages
 
+    @cache
+    def get_tools(self) -> list[dict[str, Any]]:
+        ssm_client = boto3.client("ssm", config=Config(retries={"max_attempts": 10, "mode": "adaptive"}), region_name="us-east-1")
+        return json.loads(ssm_client.get_parameter(Name=os.environ["RELAY_AI_TOOLS_SSM_PARAM"])["Parameter"]["Value"])
+
+    @cache
+    def get_tools_config(self):
+        tools = deepcopy(self.get_tools())
+        for tool in tools:
+            del tool["toolSpec"]["lambda_arn"]
+        return tools
+
+    @cache
+    def get_tool_map(self):
+        return {tool["toolSpec"]["name"]: tool["toolSpec"]["lambda_arn"] for tool in self.get_tools()}
+
     def _parse_request(self, chat_request: ChatRequest) -> dict:
         """Create default converse request body.
 
@@ -521,26 +542,7 @@ class BedrockModel(BaseChatModel):
         for message in messages:
             if '@tools' in message["content"][0].get("text", ""):
                 config["toolConfig"] = {
-                    "tools": [{
-                        "toolSpec": {
-                            "name": "rtx_assay_data",
-                            "description": "Get assay data for a RTX",
-                            "inputSchema": {
-                                "json": {
-                                    "type": "object",
-                                    "properties": {
-                                        "rtx": {
-                                            "type": "string",
-                                            "description": "The RTX number for the compound that you want assay data for. Example calls signs are RTX-1338436 and RTX-1338437."
-                                        }
-                                    },
-                                    "required": [
-                                        "rtx"
-                                    ]
-                                }
-                            }
-                        }
-                    }]
+                    "tools": self.get_tools_config()
                 }
                 break
         return config

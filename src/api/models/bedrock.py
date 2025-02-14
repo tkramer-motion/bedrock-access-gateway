@@ -238,7 +238,7 @@ class BedrockModel(BaseChatModel):
                     response = lambda_client.invoke(
                         FunctionName=self.get_tool_map()[tool["name"]],
                         InvocationType='RequestResponse',
-                        Payload=json.dumps({"RTX": tool["input"]["rtx"]}).encode(),
+                        Payload=json.dumps(tool["input"]).encode(),
                     )
 
                     results = json.load(response["Payload"])
@@ -303,7 +303,7 @@ class BedrockModel(BaseChatModel):
                     response = lambda_client.invoke(
                         FunctionName=self.get_tool_map()[tool_name],
                         InvocationType='RequestResponse',
-                        Payload=json.dumps({"RTX": function_args["rtx"]}).encode(),
+                        Payload=json.dumps(function_args).encode(),
                     )
 
                     results = json.load(response["Payload"])

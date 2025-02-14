@@ -12,7 +12,6 @@ import requests
 import tiktoken
 from botocore.config import Config
 from fastapi import HTTPException
-from relay.db.research.queries import get_results_by_compound_name
 
 from api.models.base import BaseChatModel, BaseEmbeddingsModel
 from api.schema import (
@@ -42,6 +41,8 @@ from api.setting import DEBUG, AWS_REGION, ENABLE_CROSS_REGION_INFERENCE, DEFAUL
 logger = logging.getLogger(__name__)
 
 config = Config(connect_timeout=60, read_timeout=120, retries={"max_attempts": 1})
+
+lambda_client = boto3.client('lambda', config=config, region_name=AWS_REGION, )
 
 bedrock_runtime = boto3.client(
     service_name="bedrock-runtime",
@@ -229,7 +230,14 @@ class BedrockModel(BaseChatModel):
                 if "toolUse" in part:
                     tool = part["toolUse"]
                     toolUseId = tool["toolUseId"]
-                    results = get_results_by_compound_name(tool["input"]["rtx"])
+
+                    response = lambda_client.invoke(
+                        FunctionName='string',
+                        InvocationType='RequestResponse',
+                        Payload=json.dumps({"RTX": tool["input"]["rtx"]}).encode(),
+                    )
+
+                    results = json.load(response["Payload"])
                     filtered_results = []
                     for row in results:
                         if "result_value" in row:

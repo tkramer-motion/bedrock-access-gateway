@@ -278,6 +278,7 @@ class BedrockModel(BaseChatModel):
         message_id = self.generate_message_id()
 
         toolUseId = None
+        tool_name = None
         tool_args = []
         chat_reponse = []
 
@@ -299,7 +300,13 @@ class BedrockModel(BaseChatModel):
                 if stream_response.choices[0].finish_reason == "tool_calls":
                     function_args = json.loads("".join(tool_args))
 
-                    results = get_results_by_compound_name(function_args["rtx"])
+                    response = lambda_client.invoke(
+                        FunctionName=self.get_tool_map()[tool_name],
+                        InvocationType='RequestResponse',
+                        Payload=json.dumps({"RTX": function_args["rtx"]}).encode(),
+                    )
+
+                    results = json.load(response["Payload"])
                     filtered_results = []
                     for row in results:
                         if "result_value" in row:
@@ -312,7 +319,7 @@ class BedrockModel(BaseChatModel):
 
                     args = chat_request.model_dump()
                     del args["messages"]
-                    args["messages"] = chat_request.messages + [{'content': [{'text': "".join(chat_reponse)}, {'toolUse': {'input': json.loads("".join(tool_args)), 'name': 'rtx_assay_data', 'toolUseId': toolUseId}}], 'role': 'assistant'}, ToolMessage(
+                    args["messages"] = chat_request.messages + [{'content': [{'text': "".join(chat_reponse)}, {'toolUse': {'input': json.loads("".join(tool_args)), 'name': tool_name, 'toolUseId': toolUseId}}], 'role': 'assistant'}, ToolMessage(
                         tool_call_id=toolUseId,
                         content={"assay_data": filtered_results})]
                     yield self.stream_response_to_bytes()
@@ -324,6 +331,7 @@ class BedrockModel(BaseChatModel):
                         toolUseId = tool.id
                     elif tool.function and tool.function.arguments:
                         tool_args.append(tool.function.arguments)
+                        tool_name = tool.function.name
                 yield self.stream_response_to_bytes(stream_response)
             elif (
                     chat_request.stream_options

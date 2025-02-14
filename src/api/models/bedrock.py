@@ -232,7 +232,7 @@ class BedrockModel(BaseChatModel):
                     toolUseId = tool["toolUseId"]
 
                     response = lambda_client.invoke(
-                        FunctionName='string',
+                        FunctionName='rtx_assay_data-ba0197c',
                         InvocationType='RequestResponse',
                         Payload=json.dumps({"RTX": tool["input"]["rtx"]}).encode(),
                     )

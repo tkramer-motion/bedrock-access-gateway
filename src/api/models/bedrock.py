@@ -331,7 +331,7 @@ class BedrockModel(BaseChatModel):
                     tool: ToolCall = stream_response.choices[0].delta.tool_calls[0]
                     if tool.id is not None:
                         toolUseId = tool.id
-                    elif tool.function:
+                    if tool.function:
                         if tool.function.name:
                             tool_name = tool.function.name
                             logger.info(f"Using tool {tool_name} with arguments {tool_args}")

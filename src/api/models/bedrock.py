@@ -242,21 +242,12 @@ class BedrockModel(BaseChatModel):
                     )
 
                     results = json.load(response["Payload"])
-                    filtered_results = []
-                    for row in results:
-                        if "result_value" in row:
-                            new_row = {"assay_type": row['assay_type_name'], "result_type": row['result_type_name'],
-                                       "result_units": row['result_unit_name'], "assay_name": row['assay_name'],
-                                       "value": row["result_value"]}
-                            if row.get("operator"):
-                                new_row["operator"] = row["operator"]
-                            filtered_results.append(new_row)
 
                     args = chat_request.model_dump()
                     del args["messages"]
                     args["messages"] = chat_request.messages + [output_message, ToolMessage(
                         tool_call_id=toolUseId,
-                        content={"assay_data": filtered_results})]
+                        content={"results": results})]
                     return self.chat(ChatRequest(**args))
 
         chat_response = self._create_response(
@@ -309,21 +300,11 @@ class BedrockModel(BaseChatModel):
                     )
 
                     results = json.load(response["Payload"])
-                    filtered_results = []
-                    for row in results:
-                        if "result_value" in row:
-                            new_row = {"assay_type": row['assay_type_name'], "result_type": row['result_type_name'],
-                                       "result_units": row['result_unit_name'], "assay_name": row['assay_name'],
-                                       "value": row["result_value"]}
-                            if row.get("operator"):
-                                new_row["operator"] = row["operator"]
-                            filtered_results.append(new_row)
-
                     args = chat_request.model_dump()
                     del args["messages"]
                     args["messages"] = chat_request.messages + [{'content': [{'text': "".join(chat_reponse)}, {'toolUse': {'input': json.loads("".join(tool_args)), 'name': tool_name, 'toolUseId': toolUseId}}], 'role': 'assistant'}, ToolMessage(
                         tool_call_id=toolUseId,
-                        content={"assay_data": filtered_results})]
+                        content={"results": results})]
                     logger.info(f"Calling chat_stream with {args}")
                     yield self.stream_response_to_bytes()
                     yield from self.chat_stream(ChatRequest(**args))

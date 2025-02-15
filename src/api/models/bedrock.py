@@ -300,6 +300,8 @@ class BedrockModel(BaseChatModel):
                 if stream_response.choices[0].finish_reason == "tool_calls":
                     function_args = json.loads("".join(tool_args))
 
+                    logger.info(f"Invoking tool {tool_name} with {function_args} and lambda {self.get_tool_map().get(tool_name)}")
+
                     response = lambda_client.invoke(
                         FunctionName=self.get_tool_map()[tool_name],
                         InvocationType='RequestResponse',
@@ -332,6 +334,7 @@ class BedrockModel(BaseChatModel):
                     elif tool.function and tool.function.arguments:
                         tool_args.append(tool.function.arguments)
                         tool_name = tool.function.name
+                        logger.info(f"Using tool {tool_name} with arguments {tool_args}")
                 yield self.stream_response_to_bytes(stream_response)
             elif (
                     chat_request.stream_options

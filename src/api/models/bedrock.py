@@ -331,10 +331,12 @@ class BedrockModel(BaseChatModel):
                     tool: ToolCall = stream_response.choices[0].delta.tool_calls[0]
                     if tool.id is not None:
                         toolUseId = tool.id
-                    elif tool.function and tool.function.arguments:
-                        tool_args.append(tool.function.arguments)
+                    elif tool.function:
                         tool_name = tool.function.name
                         logger.info(f"Using tool {tool_name} with arguments {tool_args}")
+                        if tool.function.arguments:
+                            tool_args.append(tool.function.arguments)
+
                 yield self.stream_response_to_bytes(stream_response)
             elif (
                     chat_request.stream_options

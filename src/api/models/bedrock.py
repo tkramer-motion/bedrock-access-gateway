@@ -332,8 +332,9 @@ class BedrockModel(BaseChatModel):
                     if tool.id is not None:
                         toolUseId = tool.id
                     elif tool.function:
-                        tool_name = tool.function.name
-                        logger.info(f"Using tool {tool_name} with arguments {tool_args}")
+                        if tool.function.name:
+                            tool_name = tool.function.name
+                            logger.info(f"Using tool {tool_name} with arguments {tool_args}")
                         if tool.function.arguments:
                             tool_args.append(tool.function.arguments)
 

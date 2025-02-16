@@ -306,8 +306,8 @@ class BedrockModel(BaseChatModel):
                     args["messages"] = chat_request.messages + [{'content': [{'text': "".join(chat_reponse)}, {'toolUse': {'input': json.loads("".join(tool_args)), 'name': tool_name, 'toolUseId': toolUseId}}], 'role': 'assistant'}, ToolMessage(
                         tool_call_id=toolUseId,
                         content={"results": results})]
-                    if DEBUG:
-                        logger.info(f"Calling chat_stream with {args}")
+                    if 1:
+                        logger.info(f"Calling chat_stream with ********{args}*********")
                     yield self.stream_response_to_bytes()
                     yield from self.chat_stream(ChatRequest(**args))
                     return

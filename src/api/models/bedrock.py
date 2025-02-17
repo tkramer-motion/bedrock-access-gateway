@@ -306,7 +306,7 @@ class BedrockModel(BaseChatModel):
                     args["messages"] = chat_request.messages + [{'content': [{'text': "".join(chat_reponse)}, {'toolUse': {'input': json.loads("".join(tool_args)), 'name': tool_name, 'toolUseId': toolUseId}}], 'role': 'assistant'}, ToolMessage(
                         tool_call_id=toolUseId,
                         content={"results": results})]
-                    if 1:
+                    if DEBUG:
                         logger.info(f"Calling chat_stream with ********{args}*********")
                     yield self.stream_response_to_bytes()
                     yield from self.chat_stream(ChatRequest(**args))
@@ -432,7 +432,7 @@ class BedrockModel(BaseChatModel):
             else:
                 # ignore others, such as system messages
                 continue
-        return messages  # self._reframe_multi_payloard(messages)
+        return self._reframe_multi_payloard(messages)
 
     def _reframe_multi_payloard(self, messages: list) -> list:
         """ Receive messages and reformat them to comply with the Claude format
@@ -960,3 +960,7 @@ def get_embeddings_model(model_id: str) -> BedrockEmbeddingsModel:
                 status_code=400,
                 detail="Unsupported embedding model id " + model_id,
             )
+
+if __name__ == "__main__":
+    for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user", content="How soluble is RTX-1274076? @tools")], model='us.anthropic.claude-3-5-sonnet-20241022-v2:0')):
+        print(chunk)

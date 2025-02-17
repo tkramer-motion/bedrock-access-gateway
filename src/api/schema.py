@@ -57,7 +57,7 @@ class UserMessage(BaseModel):
 
 class ToolMessage(BaseModel):
     role: Literal["tool"] = "tool"
-    content: dict | list
+    content: dict | list | str
     tool_call_id: str
     status: str | None = None
 

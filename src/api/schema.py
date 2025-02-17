@@ -1,5 +1,5 @@
 import time
-from typing import Literal, Iterable, Any
+from typing import Literal, Iterable
 
 from pydantic import BaseModel, Field
 
@@ -32,6 +32,7 @@ class TextContent(BaseModel):
     type: Literal["text"] = "text"
     text: str
 
+
 class ImageUrl(BaseModel):
     url: str
     detail: str | None = "auto"
@@ -53,10 +54,13 @@ class UserMessage(BaseModel):
     role: Literal["user"] = "user"
     content: str | list[TextContent | ImageContent]
 
+
 class ToolMessage(BaseModel):
     role: Literal["tool"] = "tool"
-    content: dict | list
+    content: dict | list | str
     tool_call_id: str
+    status: str | None = None
+
 
 class AssistantMessage(BaseModel):
     name: str | None = None

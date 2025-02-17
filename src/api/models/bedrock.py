@@ -248,7 +248,7 @@ class BedrockModel(BaseChatModel):
                     del args["messages"]
                     args["messages"] = chat_request.messages + [output_message, ToolMessage(
                         tool_call_id=toolUseId,
-                        content={"results": results})]
+                        content={"results": results} if results["success"] else results["message"], status=None if results["success"] else "error")]
                     return self.chat(ChatRequest(**args))
 
         chat_response = self._create_response(
@@ -301,11 +301,13 @@ class BedrockModel(BaseChatModel):
                     )
 
                     results = json.load(response["Payload"])
+
                     args = chat_request.model_dump()
                     del args["messages"]
-                    args["messages"] = chat_request.messages + [{'content': [{'text': "".join(chat_reponse)}, {'toolUse': {'input': json.loads("".join(tool_args)), 'name': tool_name, 'toolUseId': toolUseId}}], 'role': 'assistant'}, ToolMessage(
-                        tool_call_id=toolUseId,
-                        content={"results": results})]
+                    args["messages"] = chat_request.messages + [{'content': [{'text': "".join(chat_reponse)}, {'toolUse': {'input': json.loads("".join(tool_args)), 'name': tool_name, 'toolUseId': toolUseId}}], 'role': 'assistant'},
+                                                                ToolMessage(
+                                                                    tool_call_id=toolUseId,
+                                                                    content={"results": results} if results["success"] else results["message"], status=None if results["success"] else "error")]
                     if DEBUG:
                         logger.info(f"Calling chat_stream with ********{args}*********")
                     yield self.stream_response_to_bytes()
@@ -414,15 +416,23 @@ class BedrockModel(BaseChatModel):
                 # Bedrock does not support tool role,
                 # Add toolResult to content
                 # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolResultBlock.html
+
+                tool_result = {
+                    "toolUseId": message.tool_call_id,
+                }
+
+                if message.status:
+                    tool_result["status"] = message.status
+                    tool_result["content"] = [{"text": message.content}]
+                else:
+                    tool_result["content"] = [{"json": message.content}]
+
                 messages.append(
                     {
                         "role": "user",
                         "content": [
                             {
-                                "toolResult": {
-                                    "toolUseId": message.tool_call_id,
-                                    "content": [{"json": message.content}],
-                                }
+                                "toolResult": tool_result
                             }
                         ],
                     }
@@ -960,6 +970,7 @@ def get_embeddings_model(model_id: str) -> BedrockEmbeddingsModel:
                 status_code=400,
                 detail="Unsupported embedding model id " + model_id,
             )
+
 
 if __name__ == "__main__":
     for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user", content="How soluble is RTX-1274076? @tools")], model='us.anthropic.claude-3-5-sonnet-20241022-v2:0')):

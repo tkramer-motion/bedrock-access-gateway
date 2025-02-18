@@ -307,7 +307,7 @@ class BedrockModel(BaseChatModel):
                     args["messages"] = chat_request.messages + [{'content': [{'text': "".join(chat_reponse)}, {'toolUse': {'input': json.loads("".join(tool_args)), 'name': tool_name, 'toolUseId': toolUseId}}], 'role': 'assistant'},
                                                                 ToolMessage(
                                                                     tool_call_id=toolUseId,
-                                                                    content={"results": results} if results["success"] else results["message"], status=None if results["success"] else "error")]
+                                                                    content={"results": results["results"]} if results["success"] else results["message"], status=None if results["success"] else "error")]
                     if DEBUG:
                         logger.info(f"Calling chat_stream with ********{args}*********")
                     yield self.stream_response_to_bytes()
@@ -973,5 +973,5 @@ def get_embeddings_model(model_id: str) -> BedrockEmbeddingsModel:
 
 
 if __name__ == "__main__":
-    for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user", content="How soluble is RTX-1274076? @tools")], model='us.anthropic.claude-3-5-sonnet-20241022-v2:0')):
+    for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user", content="what are the 5 most recent compounds with their structures in the Titan project? @tools")], model='us.anthropic.claude-3-5-sonnet-20241022-v2:0')):
         print(chunk)

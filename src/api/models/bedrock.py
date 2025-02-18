@@ -336,7 +336,7 @@ class BedrockModel(BaseChatModel):
                         choices=[
                             ChoiceDelta(
                                 index=0,
-                                delta=ChatResponseMessage(role="assistant", content=f'\n\n```svg\n{results["results"]}```\n'),
+                                delta=ChatResponseMessage(role="assistant", content=results["results"]),
                                 logprobs=None,
                                 finish_reason="stop",
                             )
@@ -1004,5 +1004,5 @@ def get_embeddings_model(model_id: str) -> BedrockEmbeddingsModel:
 
 
 if __name__ == "__main__":
-    for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user", content="render CCc(c1)ccc2[n+]1ccc3c2[nH]c4c3cccc4 as SVG @tools")], model='us.anthropic.claude-3-5-sonnet-20241022-v2:0')):
+    for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user", content="what are the latest 5 compounds in the Titan project along with their SVGs? @tools")], model='us.anthropic.claude-3-5-sonnet-20241022-v2:0')):
         print(chunk)

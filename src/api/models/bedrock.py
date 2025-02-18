@@ -340,12 +340,13 @@ class BedrockModel(BaseChatModel):
                         choices=[
                             ChoiceDelta(
                                 index=0,
-                                delta=ChatResponseMessage(role="assistant", content=f'\n\n```{results.get("markdown_format", "json")}\n{results["results"]}```\n'),
+                                delta=ChatResponseMessage(role="assistant", content=f'\n```{results.get("markdown_format", "json")}\n{results["results"]}```\n'),
                                 logprobs=None,
                                 finish_reason="stop",
                             )
                         ],
                     ))
+                    yield self.stream_response_to_bytes()
                     yield from self.chat_stream(ChatRequest(**args))
                     return
                 elif stream_response.choices[0].delta.tool_calls:

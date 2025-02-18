@@ -244,7 +244,7 @@ class BedrockModel(BaseChatModel):
 
                     results = json.load(response["Payload"])
 
-                    if tool["name"] == "smiles_to_svg":
+                    if tool["name"] == "gsmiles_to_svg":
                         return self._create_response(
                             model=chat_request.model,
                             message_id=message_id,
@@ -320,7 +320,7 @@ class BedrockModel(BaseChatModel):
 
                     results = json.load(response["Payload"])
 
-                    if tool_name.startswith("smiles_to_"):
+                    if tool_name.startswith("jsmiles_to_"):
                         yield self.stream_response_to_bytes(ChatStreamResponse(
                             id=message_id,
                             model=chat_request.model,
@@ -352,7 +352,18 @@ class BedrockModel(BaseChatModel):
                                                                         data_type=results.get("data_type", "json"))]
                         if DEBUG:
                             logger.info(f"Calling chat_stream with ********{args}*********")
-                        yield self.stream_response_to_bytes()
+                        yield self.stream_response_to_bytes(ChatStreamResponse(
+                            id=message_id,
+                            model=chat_request.model,
+                            choices=[
+                                ChoiceDelta(
+                                    index=0,
+                                    delta=ChatResponseMessage(role="assistant", content=f'\n\n```svg\n{results["results"]}```\n'),
+                                    logprobs=None,
+                                    finish_reason="stop",
+                                )
+                            ],
+                        ))
                         yield from self.chat_stream(ChatRequest(**args))
                         return
                 elif stream_response.choices[0].delta.tool_calls:

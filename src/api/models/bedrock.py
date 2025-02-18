@@ -244,11 +244,11 @@ class BedrockModel(BaseChatModel):
 
                     results = json.load(response["Payload"])
 
-                    if tool["name"].startswith("smiles_to_"):
+                    if tool["name"] == "smiles_to_svg":
                         return self._create_response(
                             model=chat_request.model,
                             message_id=message_id,
-                            content=[{"text": f'\n\n```{results["results"]}```\n'}],
+                            content=[{"text": f'\n\n```svg\n{results["results"]}```\n'}],
                             finish_reason="stop"
                         )
                     else:

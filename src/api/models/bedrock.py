@@ -244,30 +244,22 @@ class BedrockModel(BaseChatModel):
 
                     results = json.load(response["Payload"])
 
-                    if tool["name"] == "gsmiles_to_svg":
-                        return self._create_response(
-                            model=chat_request.model,
-                            message_id=message_id,
-                            content=[{"text": f'\n\n```svg\n{results["results"]}```\n'}],
-                            finish_reason="stop"
-                        )
+                    if not results["success"]:
+                        content = results["message"]
+                    elif results.get("data_type", "json") == "json":
+                        content = {"results": results["results"]}
                     else:
-                        if not results["success"]:
-                            content = results["message"]
-                        elif results.get("data_type", "json") == "json":
-                            content = {"results": results["results"]}
-                        else:
-                            content = results["results"]
-                            if results.get("data_type") == "image":
-                                content["source"]["bytes"] = base64.b64decode(results["results"]["source"]["bytes"])
+                        content = results["results"]
+                        if results.get("data_type") == "image":
+                            content["source"]["bytes"] = base64.b64decode(results["results"]["source"]["bytes"])
 
-                        args = chat_request.model_dump()
-                        del args["messages"]
-                        args["messages"] = chat_request.messages + [output_message, ToolMessage(
-                            tool_call_id=toolUseId,
-                            content=content, status=None if results["success"] else "error",
-                            data_type=results.get("data_type", "json"))]
-                        return self.chat(ChatRequest(**args))
+                    args = chat_request.model_dump()
+                    del args["messages"]
+                    args["messages"] = chat_request.messages + [output_message, ToolMessage(
+                        tool_call_id=toolUseId,
+                        content=content, status=None if results["success"] else "error",
+                        data_type=results.get("data_type", "json"))]
+                    return self.chat(ChatRequest(**args))
 
         chat_response = self._create_response(
             model=chat_request.model,
@@ -320,52 +312,38 @@ class BedrockModel(BaseChatModel):
 
                     results = json.load(response["Payload"])
 
-                    if tool_name.startswith("jsmiles_to_"):
-                        yield self.stream_response_to_bytes(ChatStreamResponse(
-                            id=message_id,
-                            model=chat_request.model,
-                            choices=[
-                                ChoiceDelta(
-                                    index=0,
-                                    delta=ChatResponseMessage(role="assistant", content=f'\n\n```svg\n{results["results"]}```\n'),
-                                    logprobs=None,
-                                    finish_reason="stop",
-                                )
-                            ],
-                        ))
+                    if not results["success"]:
+                        content = results["message"]
+                    elif results.get("data_type", "json") == "json":
+                        content = {"results": results["results"]}
                     else:
-                        if not results["success"]:
-                            content = results["message"]
-                        elif results.get("data_type", "json") == "json":
-                            content = {"results": results["results"]}
-                        else:
-                            content = results["results"]
-                            if results.get("data_type") == "image":
-                                content["source"]["bytes"] = base64.b64decode(results["results"]["source"]["bytes"])
+                        content = results["results"]
+                        if results.get("data_type") == "image":
+                            content["source"]["bytes"] = base64.b64decode(results["results"]["source"]["bytes"])
 
-                        args = chat_request.model_dump()
-                        del args["messages"]
-                        args["messages"] = chat_request.messages + [{'content': [{'text': "".join(chat_reponse)}, {'toolUse': {'input': json.loads("".join(tool_args)) if tool_args else {}, 'name': tool_name, 'toolUseId': toolUseId}}], 'role': 'assistant'},
-                                                                    ToolMessage(
-                                                                        tool_call_id=toolUseId,
-                                                                        content=content, status=None if results["success"] else "error",
-                                                                        data_type=results.get("data_type", "json"))]
-                        if DEBUG:
-                            logger.info(f"Calling chat_stream with ********{args}*********")
-                        yield self.stream_response_to_bytes(ChatStreamResponse(
-                            id=message_id,
-                            model=chat_request.model,
-                            choices=[
-                                ChoiceDelta(
-                                    index=0,
-                                    delta=ChatResponseMessage(role="assistant", content=f'\n\n```svg\n{results["results"]}```\n'),
-                                    logprobs=None,
-                                    finish_reason="stop",
-                                )
-                            ],
-                        ))
-                        yield from self.chat_stream(ChatRequest(**args))
-                        return
+                    args = chat_request.model_dump()
+                    del args["messages"]
+                    args["messages"] = chat_request.messages + [{'content': [{'text': "".join(chat_reponse)}, {'toolUse': {'input': json.loads("".join(tool_args)) if tool_args else {}, 'name': tool_name, 'toolUseId': toolUseId}}], 'role': 'assistant'},
+                                                                ToolMessage(
+                                                                    tool_call_id=toolUseId,
+                                                                    content=content, status=None if results["success"] else "error",
+                                                                    data_type=results.get("data_type", "json"))]
+                    if DEBUG:
+                        logger.info(f"Calling chat_stream with ********{args}*********")
+                    yield self.stream_response_to_bytes(ChatStreamResponse(
+                        id=message_id,
+                        model=chat_request.model,
+                        choices=[
+                            ChoiceDelta(
+                                index=0,
+                                delta=ChatResponseMessage(role="assistant", content=f'\n\n```svg\n{results["results"]}```\n'),
+                                logprobs=None,
+                                finish_reason="stop",
+                            )
+                        ],
+                    ))
+                    yield from self.chat_stream(ChatRequest(**args))
+                    return
                 elif stream_response.choices[0].delta.tool_calls:
                     tool: ToolCall = stream_response.choices[0].delta.tool_calls[0]
                     if tool.id is not None:

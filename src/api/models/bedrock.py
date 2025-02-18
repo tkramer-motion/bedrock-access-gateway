@@ -327,7 +327,7 @@ class BedrockModel(BaseChatModel):
                             choices=[
                                 ChoiceDelta(
                                     index=0,
-                                    delta=ChatResponseMessage(role="assistant", content=f'```\n\n{results["results"]}```\n'),
+                                    delta=ChatResponseMessage(role="assistant", content=f'\n\n```svg\n{results["results"]}```\n'),
                                     logprobs=None,
                                     finish_reason="stop",
                                 )

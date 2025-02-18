@@ -340,7 +340,7 @@ class BedrockModel(BaseChatModel):
                         choices=[
                             ChoiceDelta(
                                 index=0,
-                                delta=ChatResponseMessage(role="assistant", content=f'\n```{results.get("markdown_format", "json")}\n{results["results"]}```\n'),
+                                delta=ChatResponseMessage(role="assistant", content=f'\n```{results.get("markdown_format", "json")}\n{results["results"]}\n```\n'),
                                 logprobs=None,
                                 finish_reason="stop",
                             )

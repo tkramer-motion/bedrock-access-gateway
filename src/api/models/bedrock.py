@@ -290,7 +290,7 @@ class BedrockModel(BaseChatModel):
                     chat_reponse.append(stream_response.choices[0].delta.content)
 
                 if stream_response.choices[0].finish_reason == "tool_calls":
-                    function_args = json.loads("".join(tool_args))
+                    function_args = json.loads("".join(tool_args)) if tool_args else []
 
                     logger.info(f"Invoking tool {tool_name} with {function_args} and lambda {self.get_tool_map().get(tool_name)}")
 

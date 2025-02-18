@@ -427,7 +427,7 @@ class BedrockModel(BaseChatModel):
                     tool_result["status"] = message.status
                     tool_result["content"] = [{"text": message.content}]
                 else:
-                    tool_result["content"] = [{"json": message.content}]
+                    tool_result["content"] = [{message.data_type: message.content}]
 
                 messages.append(
                     {

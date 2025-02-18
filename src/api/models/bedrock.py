@@ -323,7 +323,11 @@ class BedrockModel(BaseChatModel):
 
                     args = chat_request.model_dump()
                     del args["messages"]
-                    args["messages"] = chat_request.messages + [{'content': [{'text': "".join(chat_reponse)}, {'toolUse': {'input': json.loads("".join(tool_args)) if tool_args else {}, 'name': tool_name, 'toolUseId': toolUseId}}], 'role': 'assistant'},
+                    new_content = []
+                    if new_content:
+                        new_content.append({'text': "".join(chat_reponse)})
+                    new_content.append({'toolUse': {'input': json.loads("".join(tool_args)) if tool_args else {}, 'name': tool_name, 'toolUseId': toolUseId}})
+                    args["messages"] = chat_request.messages + [{'content': new_content, 'role': 'assistant'},
                                                                 ToolMessage(
                                                                     tool_call_id=toolUseId,
                                                                     content=content, status=None if results["success"] else "error",

@@ -248,6 +248,8 @@ class BedrockModel(BaseChatModel):
                         content = results["message"]
                     elif results.get("data_type", "json") == "json":
                         content = {"results": results["results"]}
+                    elif results.get("data_type") == "image":
+                        results["results"]["source"]["bytes"] = base64.b64decode(results["results"]["source"]["bytes"])
                     else:
                         content = results["results"]
 
@@ -314,6 +316,8 @@ class BedrockModel(BaseChatModel):
                         content = results["message"]
                     elif results.get("data_type", "json") == "json":
                         content = {"results": results["results"]}
+                    elif results.get("data_type") == "image":
+                        results["results"]["source"]["bytes"] = base64.b64decode(results["results"]["source"]["bytes"])
                     else:
                         content = results["results"]
 
@@ -989,5 +993,5 @@ def get_embeddings_model(model_id: str) -> BedrockEmbeddingsModel:
 
 
 if __name__ == "__main__":
-    for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user", content="render CCc(c1)ccc2[n+]1ccc3c2[nH]c4c3cccc4? @tools")], model='us.anthropic.claude-3-5-sonnet-20241022-v2:0')):
+    for chunk in BedrockModel().chat(ChatRequest(messages=[UserMessage(name=None, role="user", content="render CCc(c1)ccc2[n+]1ccc3c2[nH]c4c3cccc4? @tools")], model='us.anthropic.claude-3-5-sonnet-20241022-v2:0')):
         print(chunk)

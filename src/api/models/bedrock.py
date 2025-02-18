@@ -248,7 +248,7 @@ class BedrockModel(BaseChatModel):
                         return self._create_response(
                             model=chat_request.model,
                             message_id=message_id,
-                            content=[{"text": results["results"]}],
+                            content=[{"text": f'```{results["results"]}```'}],
                             finish_reason="stop"
                         )
                     else:
@@ -327,7 +327,7 @@ class BedrockModel(BaseChatModel):
                             choices=[
                                 ChoiceDelta(
                                     index=0,
-                                    delta=ChatResponseMessage(role="assistant", content=results["results"]),
+                                    delta=ChatResponseMessage(role="assistant", content=f'```{results["results"]}```'),
                                     logprobs=None,
                                     finish_reason="stop",
                                 )

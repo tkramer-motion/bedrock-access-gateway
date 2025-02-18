@@ -60,6 +60,7 @@ class ToolMessage(BaseModel):
     content: dict | list | str
     tool_call_id: str
     status: str | None = None
+    data_type: str = "json"
 
 
 class AssistantMessage(BaseModel):

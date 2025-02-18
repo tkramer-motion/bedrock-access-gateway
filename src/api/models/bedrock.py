@@ -248,7 +248,8 @@ class BedrockModel(BaseChatModel):
                     del args["messages"]
                     args["messages"] = chat_request.messages + [output_message, ToolMessage(
                         tool_call_id=toolUseId,
-                        content={"results": results} if results["success"] else results["message"], status=None if results["success"] else "error")]
+                        content={"results": results} if results["success"] else results["message"], status=None if results["success"] else "error",
+                        data_type=results.get("data_type", "json"))]
                     return self.chat(ChatRequest(**args))
 
         chat_response = self._create_response(
@@ -307,7 +308,8 @@ class BedrockModel(BaseChatModel):
                     args["messages"] = chat_request.messages + [{'content': [{'text': "".join(chat_reponse)}, {'toolUse': {'input': json.loads("".join(tool_args)) if tool_args else {}, 'name': tool_name, 'toolUseId': toolUseId}}], 'role': 'assistant'},
                                                                 ToolMessage(
                                                                     tool_call_id=toolUseId,
-                                                                    content={"results": results["results"]} if results["success"] else results["message"], status=None if results["success"] else "error")]
+                                                                    content={"results": results["results"]} if results["success"] else results["message"], status=None if results["success"] else "error",
+                                                                    data_type=results.get("data_type", "json"))]
                     if DEBUG:
                         logger.info(f"Calling chat_stream with ********{args}*********")
                     yield self.stream_response_to_bytes()
@@ -973,5 +975,5 @@ def get_embeddings_model(model_id: str) -> BedrockEmbeddingsModel:
 
 
 if __name__ == "__main__":
-    for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user", content="what rgm models are available? @tools")], model='us.anthropic.claude-3-5-sonnet-20241022-v2:0')):
+    for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user", content="render CCc(c1)ccc2[n+]1ccc3c2[nH]c4c3cccc4? @tools")], model='us.anthropic.claude-3-5-sonnet-20241022-v2:0')):
         print(chunk)

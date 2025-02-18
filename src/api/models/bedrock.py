@@ -334,18 +334,20 @@ class BedrockModel(BaseChatModel):
                                                                     data_type=results.get("data_type", "json"))]
                     if DEBUG:
                         logger.info(f"Calling chat_stream with ********{args}*********")
-                    yield self.stream_response_to_bytes(ChatStreamResponse(
-                        id=message_id,
-                        model=chat_request.model,
-                        choices=[
-                            ChoiceDelta(
-                                index=0,
-                                delta=ChatResponseMessage(role="assistant", content=f'\n```{results.get("markdown_format", "json")}\n{results["results"]}\n```\n'),
-                                logprobs=None,
-                                finish_reason="stop",
-                            )
-                        ],
-                    ))
+
+                    if results.get("success", False):
+                        yield self.stream_response_to_bytes(ChatStreamResponse(
+                            id=message_id,
+                            model=chat_request.model,
+                            choices=[
+                                ChoiceDelta(
+                                    index=0,
+                                    delta=ChatResponseMessage(role="assistant", content=f'\n```{results.get("markdown_format", "json")}\n{results["results"]}\n```\n'),
+                                    logprobs=None,
+                                    finish_reason="stop",
+                                )
+                            ],
+                        ))
                     yield self.stream_response_to_bytes()
                     yield from self.chat_stream(ChatRequest(**args))
                     return
@@ -1009,5 +1011,5 @@ def get_embeddings_model(model_id: str) -> BedrockEmbeddingsModel:
 
 
 if __name__ == "__main__":
-    for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user", content="what are the latest 5 compounds in the Titan project along with their SVGs? @tools")], model='us.anthropic.claude-3-5-sonnet-20241022-v2:0')):
+    for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user", content="plot potency for recent titan compounds @tools")], model='us.anthropic.claude-3-5-sonnet-20241022-v2:0')):
         print(chunk)

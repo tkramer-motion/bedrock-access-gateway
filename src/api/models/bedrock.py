@@ -248,10 +248,10 @@ class BedrockModel(BaseChatModel):
                         content = results["message"]
                     elif results.get("data_type", "json") == "json":
                         content = {"results": results["results"]}
-                    elif results.get("data_type") == "image":
-                        results["results"]["source"]["bytes"] = base64.b64decode(results["results"]["source"]["bytes"])
                     else:
                         content = results["results"]
+                        if results.get("data_type") == "image":
+                            content["source"]["bytes"] = base64.b64decode(results["results"]["source"]["bytes"])
 
                     args = chat_request.model_dump()
                     del args["messages"]

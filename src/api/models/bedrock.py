@@ -43,7 +43,7 @@ from api.setting import DEBUG, AWS_REGION
 
 logger = logging.getLogger(__name__)
 
-config = Config(connect_timeout=60, read_timeout=120, retries={"max_attempts": 1})
+config = Config(connect_timeout=60, read_timeout=120, retries={"max_attempts": 5})
 
 lambda_client = boto3.client('lambda', config=config, region_name=AWS_REGION, )
 
@@ -543,8 +543,9 @@ class BedrockModel(BaseChatModel):
 
     @cache
     def get_tools(self) -> list[dict[str, Any]]:
-        ssm_client = boto3.client("ssm", config=Config(retries={"max_attempts": 10, "mode": "adaptive"}), region_name="us-east-1")
-        return json.loads(ssm_client.get_parameter(Name=os.environ["RELAY_AI_TOOLS_SSM_PARAM"])["Parameter"]["Value"])
+        s3 = boto3.resource("s3", config=config)
+        obj = s3.Object(os.environ.get("RELAY_AI_TOOLS_BUCKET"), os.environ.get("RELAY_AI_TOOLS_KEY"))
+        return json.load(obj.get()['Body'])
 
     @cache
     def get_tools_config(self):

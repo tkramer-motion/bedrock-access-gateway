@@ -431,6 +431,11 @@ class BedrockModel(BaseChatModel):
                 )
             elif isinstance(message, AssistantMessage):
                 if message.content:
+                    if message.content.startswith("This prompt goes against Relay Acceptible Use policy."):
+                        logger.info("Popping message to avoid poisoning thread")
+                        messages.pop()
+                        continue
+
                     # Text message
                     messages.append(
                         {

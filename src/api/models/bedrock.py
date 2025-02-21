@@ -206,6 +206,13 @@ class BedrockModel(BaseChatModel):
                         }
                     }
                     })
+
+        if "GUARDRAIL_IDENTIFIER" in os.environ:
+            args["guardrailConfig"] = {
+                'guardrailIdentifier': os.environ["GUARDRAIL_IDENTIFIER"],
+                'guardrailVersion': os.environ["GUARDRAIL_VERSION"],
+                'trace': 'enabled'
+            }
         try:
             if stream:
                 response = bedrock_runtime.converse_stream(**args)

@@ -206,6 +206,13 @@ class BedrockModel(BaseChatModel):
                         }
                     }
                     })
+
+        if "GUARDRAIL_IDENTIFIER" in os.environ:
+            args["guardrailConfig"] = {
+                'guardrailIdentifier': os.environ["GUARDRAIL_IDENTIFIER"],
+                'guardrailVersion': os.environ["GUARDRAIL_VERSION"],
+                'trace': 'enabled'
+            }
         try:
             if stream:
                 response = bedrock_runtime.converse_stream(**args)
@@ -424,6 +431,11 @@ class BedrockModel(BaseChatModel):
                 )
             elif isinstance(message, AssistantMessage):
                 if message.content:
+                    if message.content.startswith("This prompt goes against Relay Acceptable Use policy."):
+                        logger.info("Popping message to avoid poisoning thread")
+                        messages.pop()
+                        continue
+
                     # Text message
                     messages.append(
                         {

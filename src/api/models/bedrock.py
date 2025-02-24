@@ -322,6 +322,7 @@ class BedrockModel(BaseChatModel):
                                 )
                             ],
                         ))
+                        yield self.stream_response_to_bytes()
                         return
 
                     try:
@@ -371,6 +372,8 @@ class BedrockModel(BaseChatModel):
                                     )
                                 ],
                             ))
+                            yield self.stream_response_to_bytes()
+                            return
                         yield self.stream_response_to_bytes()
                         yield from self.chat_stream(ChatRequest(**args))
                         return
@@ -387,6 +390,7 @@ class BedrockModel(BaseChatModel):
                                 )
                             ],
                         ))
+                        yield self.stream_response_to_bytes()
                         return
                 elif stream_response.choices[0].delta.tool_calls:
                     tool: ToolCall = stream_response.choices[0].delta.tool_calls[0]

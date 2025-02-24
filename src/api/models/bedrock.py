@@ -334,7 +334,9 @@ class BedrockModel(BaseChatModel):
                             Payload=json.dumps(function_args).encode(),
                         )
 
-                        results = json.load(response["Payload"])
+                        raw_results = response["Payload"].read().decode()
+
+                        results = json.loads(raw_results)
 
                         if not results["success"]:
                             content = results["message"]
@@ -382,7 +384,7 @@ class BedrockModel(BaseChatModel):
                             choices=[
                                 ChoiceDelta(
                                     index=0,
-                                    delta=ChatResponseMessage(role="assistant", content=f'\n```text\nAttempted to call tool {tool_name} with arguments: {function_args}\nI got an exception {e} and function output {response["Payload"]}.```\n'),
+                                    delta=ChatResponseMessage(role="assistant", content=f'\n```text\nAttempted to call tool {tool_name} with arguments: {function_args}\nI got an exception {e} and function output {raw_results}.```\n'),
                                     logprobs=None,
                                     finish_reason="stop",
                                 )

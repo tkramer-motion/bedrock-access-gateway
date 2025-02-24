@@ -307,57 +307,87 @@ class BedrockModel(BaseChatModel):
                     chat_reponse.append(stream_response.choices[0].delta.content)
 
                 if stream_response.choices[0].finish_reason == "tool_calls":
-                    function_args = json.loads("".join(tool_args)) if tool_args else []
-
-                    logger.info(f"Invoking tool {tool_name} with {function_args} and lambda {self.get_tool_map().get(tool_name)}")
-
-                    response = lambda_client.invoke(
-                        FunctionName=self.get_tool_map()[tool_name],
-                        InvocationType='RequestResponse',
-                        Payload=json.dumps(function_args).encode(),
-                    )
-
-                    results = json.load(response["Payload"])
-
-                    if not results["success"]:
-                        content = results["message"]
-                    elif results.get("data_type", "json") == "json":
-                        content = {"results": results["results"]}
-                    else:
-                        content = results["results"]
-                        if results.get("data_type") == "image":
-                            content["source"]["bytes"] = base64.b64decode(results["results"]["source"]["bytes"])
-
-                    args = chat_request.model_dump()
-                    del args["messages"]
-                    new_content = []
-                    if new_content:
-                        new_content.append({'text': "".join(chat_reponse)})
-                    new_content.append({'toolUse': {'input': json.loads("".join(tool_args)) if tool_args else {}, 'name': tool_name, 'toolUseId': toolUseId}})
-                    args["messages"] = chat_request.messages + [{'content': new_content, 'role': 'assistant'},
-                                                                ToolMessage(
-                                                                    tool_call_id=toolUseId,
-                                                                    content=content, status=None if results["success"] else "error",
-                                                                    data_type=results.get("data_type", "json"))]
-                    if DEBUG:
-                        logger.info(f"Calling chat_stream with ********{args}*********")
-
-                    if results.get("success", False):
+                    try:
+                        function_args = json.loads("".join(tool_args)) if tool_args else []
+                    except Exception as e:
                         yield self.stream_response_to_bytes(ChatStreamResponse(
                             id=message_id,
                             model=chat_request.model,
                             choices=[
                                 ChoiceDelta(
                                     index=0,
-                                    delta=ChatResponseMessage(role="assistant", content=f'\n```{results.get("markdown_format", "json")}\n{results["results"]}\n```\n'),
+                                    delta=ChatResponseMessage(role="assistant", content=f'\n```text\nAttempted to call tool {tool_name} with arguments: {"".join(tool_args)}\nI was unable to parse the JSON.```\n'),
                                     logprobs=None,
                                     finish_reason="stop",
                                 )
                             ],
                         ))
-                    yield self.stream_response_to_bytes()
-                    yield from self.chat_stream(ChatRequest(**args))
-                    return
+                        return
+
+                    try:
+                        logger.info(f"Invoking tool {tool_name} with {function_args} and lambda {self.get_tool_map().get(tool_name)}")
+
+                        response = lambda_client.invoke(
+                            FunctionName=self.get_tool_map()[tool_name],
+                            InvocationType='RequestResponse',
+                            Payload=json.dumps(function_args).encode(),
+                        )
+
+                        results = json.load(response["Payload"])
+
+                        if not results["success"]:
+                            content = results["message"]
+                        elif results.get("data_type", "json") == "json":
+                            content = {"results": results["results"]}
+                        else:
+                            content = results["results"]
+                            if results.get("data_type") == "image":
+                                content["source"]["bytes"] = base64.b64decode(results["results"]["source"]["bytes"])
+
+                        args = chat_request.model_dump()
+                        del args["messages"]
+                        new_content = []
+                        if new_content:
+                            new_content.append({'text': "".join(chat_reponse)})
+                        new_content.append({'toolUse': {'input': json.loads("".join(tool_args)) if tool_args else {}, 'name': tool_name, 'toolUseId': toolUseId}})
+                        args["messages"] = chat_request.messages + [{'content': new_content, 'role': 'assistant'},
+                                                                    ToolMessage(
+                                                                        tool_call_id=toolUseId,
+                                                                        content=content, status=None if results["success"] else "error",
+                                                                        data_type=results.get("data_type", "json"))]
+                        if DEBUG:
+                            logger.info(f"Calling chat_stream with ********{args}*********")
+
+                        if results.get("success", False):
+                            yield self.stream_response_to_bytes(ChatStreamResponse(
+                                id=message_id,
+                                model=chat_request.model,
+                                choices=[
+                                    ChoiceDelta(
+                                        index=0,
+                                        delta=ChatResponseMessage(role="assistant", content=f'\n```{results.get("markdown_format", "json")}\n{results["results"]}\n```\n'),
+                                        logprobs=None,
+                                        finish_reason="stop",
+                                    )
+                                ],
+                            ))
+                        yield self.stream_response_to_bytes()
+                        yield from self.chat_stream(ChatRequest(**args))
+                        return
+                    except Exception as e:
+                        yield self.stream_response_to_bytes(ChatStreamResponse(
+                            id=message_id,
+                            model=chat_request.model,
+                            choices=[
+                                ChoiceDelta(
+                                    index=0,
+                                    delta=ChatResponseMessage(role="assistant", content=f'\n```text\nAttempted to call tool {tool_name} with arguments: {function_args}\nI got an exception {e} and function output {response["Payload"]}.```\n'),
+                                    logprobs=None,
+                                    finish_reason="stop",
+                                )
+                            ],
+                        ))
+                        return
                 elif stream_response.choices[0].delta.tool_calls:
                     tool: ToolCall = stream_response.choices[0].delta.tool_calls[0]
                     if tool.id is not None:

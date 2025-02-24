@@ -139,7 +139,7 @@ def list_bedrock_models() -> dict:
     #     }
 
     # return model_list
-    return {'us.anthropic.claude-3-5-sonnet-20241022-v2:0': {'modalities': ['TEXT', 'IMAGE']}}
+    return {'us.anthropic.claude-3-7-sonnet-20250219-v1:0': {'modalities': ['TEXT', 'IMAGE']}}
 
 
 # Initialize the model list.
@@ -622,7 +622,7 @@ class BedrockModel(BaseChatModel):
             "topP": chat_request.top_p,
         }
 
-        if chat_request.model == "us.anthropic.claude-3-5-sonnet-20241022-v2:0":
+        if chat_request.model == "us.anthropic.claude-3-7-sonnet-20250219-v1:0":
             inference_config["maxTokens"] = 8192
 
         if chat_request.stop is not None:
@@ -1058,5 +1058,5 @@ def get_embeddings_model(model_id: str) -> BedrockEmbeddingsModel:
 
 
 if __name__ == "__main__":
-    for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user", content="plot potency for recent titan compounds @tools")], model='us.anthropic.claude-3-5-sonnet-20241022-v2:0')):
+    for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user", content="plot potency for recent titan compounds @tools")], model='us.anthropic.claude-3-7-sonnet-20250219-v1:0')):
         print(chunk)

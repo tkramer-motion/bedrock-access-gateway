@@ -372,8 +372,6 @@ class BedrockModel(BaseChatModel):
                                     )
                                 ],
                             ))
-                            yield self.stream_response_to_bytes()
-                            return
                         yield self.stream_response_to_bytes()
                         yield from self.chat_stream(ChatRequest(**args))
                         return

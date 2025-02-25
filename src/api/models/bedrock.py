@@ -377,7 +377,7 @@ class BedrockModel(BaseChatModel):
                                     )
                                 ],
                             ))
-                        # yield self.stream_response_to_bytes()
+                        yield self.stream_response_to_bytes()
                         yield from self.chat_stream(ChatRequest(**args))
                         return
                     except Exception as e:
@@ -626,7 +626,7 @@ class BedrockModel(BaseChatModel):
         }
 
         if chat_request.model == "us.anthropic.claude-3-7-sonnet-20250219-v1:0":
-            inference_config["maxTokens"] = 131072
+            inference_config["maxTokens"] = 64 * 1024
 
         if chat_request.stop is not None:
             stop = chat_request.stop
@@ -1058,8 +1058,3 @@ def get_embeddings_model(model_id: str) -> BedrockEmbeddingsModel:
                 status_code=400,
                 detail="Unsupported embedding model id " + model_id,
             )
-
-
-if __name__ == "__main__":
-    for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user", content="plot potency for recent titan compounds @tools")], model='us.anthropic.claude-3-7-sonnet-20250219-v1:0')):
-        print(chunk)

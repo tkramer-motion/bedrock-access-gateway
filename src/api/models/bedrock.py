@@ -377,7 +377,7 @@ class BedrockModel(BaseChatModel):
                                     )
                                 ],
                             ))
-                        yield self.stream_response_to_bytes()
+                        # yield self.stream_response_to_bytes()
                         yield from self.chat_stream(ChatRequest(**args))
                         return
                     except Exception as e:

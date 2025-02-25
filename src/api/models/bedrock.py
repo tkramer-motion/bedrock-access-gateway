@@ -686,7 +686,7 @@ class BedrockModel(BaseChatModel):
             message.content = None
         else:
             message.content = ""
-            if content:
+            if content and "text" in content[0]:
                 message.content = content[0]["text"]
 
         response = ChatResponse(

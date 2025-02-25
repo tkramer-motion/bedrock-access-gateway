@@ -623,7 +623,7 @@ class BedrockModel(BaseChatModel):
         }
 
         if chat_request.model == "us.anthropic.claude-3-7-sonnet-20250219-v1:0":
-            inference_config["maxTokens"] = 8192
+            inference_config["maxTokens"] = 131072
 
         if chat_request.stop is not None:
             stop = chat_request.stop

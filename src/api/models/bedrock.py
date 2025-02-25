@@ -1068,8 +1068,3 @@ def get_embeddings_model(model_id: str) -> BedrockEmbeddingsModel:
                 status_code=400,
                 detail="Unsupported embedding model id " + model_id,
             )
-
-
-if __name__ == "__main__":
-    for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user", content="highlight the interesting data from this month on the Titan project @tools")], model='us.anthropic.claude-3-7-sonnet-20250219-v1:0')):
-        print(chunk)

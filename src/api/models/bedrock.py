@@ -213,6 +213,14 @@ class BedrockModel(BaseChatModel):
                 'guardrailVersion': os.environ["GUARDRAIL_VERSION"],
                 'trace': 'enabled'
             }
+
+        if "@thinking" in message.split():
+            args["additionalModelRequestFields"] = {
+                "thinking": {
+                    "type": "enabled",
+                    "budget_tokens": 10000
+                }
+            }
         try:
             if stream:
                 response = bedrock_runtime.converse_stream(**args)
@@ -377,7 +385,7 @@ class BedrockModel(BaseChatModel):
                                     )
                                 ],
                             ))
-                        # yield self.stream_response_to_bytes()
+                        yield self.stream_response_to_bytes()
                         yield from self.chat_stream(ChatRequest(**args))
                         return
                     except Exception as e:
@@ -619,14 +627,12 @@ class BedrockModel(BaseChatModel):
         system_prompts = self._parse_system_prompts(chat_request)
 
         # Base inference parameters.
+
         inference_config = {
             "temperature": chat_request.temperature,
-            "maxTokens": chat_request.max_tokens,
-            "topP": chat_request.top_p,
+            "maxTokens": 131072,
+            "topP": chat_request.top_p
         }
-
-        if chat_request.model == "us.anthropic.claude-3-7-sonnet-20250219-v1:0":
-            inference_config["maxTokens"] = 131072
 
         if chat_request.stop is not None:
             stop = chat_request.stop
@@ -640,6 +646,10 @@ class BedrockModel(BaseChatModel):
                 config["toolConfig"] = {
                     "tools": self.get_tools_config()
                 }
+                break
+        for message in messages:
+            if '@thinking' in message["content"][0].get("text", ""):
+                del config["inferenceConfig"]["topP"]
                 break
         return config
 
@@ -676,7 +686,7 @@ class BedrockModel(BaseChatModel):
             message.content = None
         else:
             message.content = ""
-            if content:
+            if content and "text" in content[0]:
                 message.content = content[0]["text"]
 
         response = ChatResponse(
@@ -745,7 +755,7 @@ class BedrockModel(BaseChatModel):
                 message = ChatResponseMessage(
                     content=delta["text"],
                 )
-            else:
+            elif "toolUse" in delta:
                 # tool use
                 index = chunk["contentBlockDelta"]["contentBlockIndex"] - 1
                 message = ChatResponseMessage(
@@ -1058,8 +1068,3 @@ def get_embeddings_model(model_id: str) -> BedrockEmbeddingsModel:
                 status_code=400,
                 detail="Unsupported embedding model id " + model_id,
             )
-
-
-if __name__ == "__main__":
-    for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user", content="plot potency for recent titan compounds @tools")], model='us.anthropic.claude-3-7-sonnet-20250219-v1:0')):
-        print(chunk)

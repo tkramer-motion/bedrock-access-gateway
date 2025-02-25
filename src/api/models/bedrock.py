@@ -326,6 +326,7 @@ class BedrockModel(BaseChatModel):
                         return
 
                     try:
+                        t0 = time.time()
                         logger.info(f"Invoking tool {tool_name} with {function_args} and lambda {self.get_tool_map().get(tool_name)}")
 
                         response = lambda_client.invoke(
@@ -333,6 +334,8 @@ class BedrockModel(BaseChatModel):
                             InvocationType='RequestResponse',
                             Payload=json.dumps(function_args).encode(),
                         )
+
+                        logger.info(f"Finished tool {tool_name} in {time.time() - t0} seconds")
 
                         raw_results = response["Payload"].read().decode()
 

@@ -172,6 +172,8 @@ class BedrockModel(BaseChatModel):
         if DEBUG:
             logger.info("Raw request: " + chat_request.model_dump_json())
 
+        logger.info(f"LENGTH OF REQUEST: {len(chat_request.model_dump_json())}")
+
         # convert OpenAI chat request to Bedrock SDK request
         args = self._parse_request(chat_request)
         if DEBUG:
@@ -373,18 +375,19 @@ class BedrockModel(BaseChatModel):
                             logger.info(f"Calling chat_stream with ********{args}*********")
 
                         if results.get("success", False):
-                            yield self.stream_response_to_bytes(ChatStreamResponse(
-                                id=message_id,
-                                model=chat_request.model,
-                                choices=[
-                                    ChoiceDelta(
-                                        index=0,
-                                        delta=ChatResponseMessage(role="assistant", content=f'\n```{results.get("markdown_format", "json")}\n{results["results"]}\n```\n'),
-                                        logprobs=None,
-                                        finish_reason="stop",
-                                    )
-                                ],
-                            ))
+                            if results.get("markdown_format", "json") != "json" or len(json.dumps(results["results"])) < 4000:
+                                yield self.stream_response_to_bytes(ChatStreamResponse(
+                                    id=message_id,
+                                    model=chat_request.model,
+                                    choices=[
+                                        ChoiceDelta(
+                                            index=0,
+                                            delta=ChatResponseMessage(role="assistant", content=f'\n```{results.get("markdown_format", "json")}\n{results["results"]}\n```\n'),
+                                            logprobs=None,
+                                            finish_reason="stop",
+                                        )
+                                    ],
+                                ))
                         yield self.stream_response_to_bytes()
                         yield from self.chat_stream(ChatRequest(**args))
                         return

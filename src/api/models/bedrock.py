@@ -376,6 +376,7 @@ class BedrockModel(BaseChatModel):
 
                         if results.get("success", False):
                             if results.get("markdown_format", "json") != "json" or len(json.dumps(results["results"])) < 4000:
+                                logger.info(f"Returning tool response of size {len(json.dumps(results["results"]))}")
                                 yield self.stream_response_to_bytes(ChatStreamResponse(
                                     id=message_id,
                                     model=chat_request.model,

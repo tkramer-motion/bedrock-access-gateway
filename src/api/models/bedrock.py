@@ -319,7 +319,8 @@ class BedrockModel(BaseChatModel):
                 if stream_response.choices[0].finish_reason == "tool_calls":
                     try:
                         function_args = json.loads("".join(tool_args)) if tool_args else []
-                    except Exception as e:
+                    except Exception:
+                        logger.exception("Error parsing tool_args")
                         yield self.stream_response_to_bytes(ChatStreamResponse(
                             id=message_id,
                             model=chat_request.model,

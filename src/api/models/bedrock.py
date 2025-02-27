@@ -204,7 +204,7 @@ class BedrockModel(BaseChatModel):
                         'format': 'txt',
                         'name': f'string{i + 1}',
                         'source': {
-                            'bytes': row['content']['text'].encode()
+                            'bytes': row['content']['text'].strip().encode()
                         }
                     }
                     })

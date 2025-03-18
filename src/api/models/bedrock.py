@@ -139,7 +139,7 @@ def list_bedrock_models() -> dict:
     #     }
 
     # return model_list
-    return {'us.anthropic.claude-3-7-sonnet-20250219-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'deepseek.r1-v1:0': {'modalities': ['TEXT']}}
+    return {'us.anthropic.claude-3-7-sonnet-20250219-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.deepseek.r1-v1:0': {'modalities': ['TEXT']}}
 
 
 # Initialize the model list.
@@ -635,7 +635,7 @@ class BedrockModel(BaseChatModel):
 
         inference_config = {
             "temperature": chat_request.temperature,
-            "maxTokens": 131072,
+            "maxTokens": 131072 if "anthropic" in chat_request.model else 32768,
             "topP": chat_request.top_p
         }
 
@@ -1078,7 +1078,7 @@ def get_embeddings_model(model_id: str) -> BedrockEmbeddingsModel:
 if __name__ == "__main__":
     for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user",
                                                                               content="@kb So if I have a bunch of ligands selected in Maestro, how can I use some sort of script to convert a pyrazole tautomer? To this manually, I have to edit the double and single bonds of the ring. This is getting repetitive, so I\u2019d like to script it. Perhaps it requires inputting a SMILES for the desired tautomer")],
-                                                        model='deepseek.r1-v1:0')):
+                                                        model='us.deepseek.r1-v1:0')):
         raw = chunk.decode()[6:]
         if not raw.startswith("[DONE]"):
             row = json.loads(raw)

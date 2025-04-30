@@ -633,9 +633,15 @@ class BedrockModel(BaseChatModel):
 
         # Base inference parameters.
 
+        tokens = 32768
+        if "anthropic" in chat_request.model:
+            tokens = 131072
+        if "llama4" in chat_request.model:
+            tokens = 8192
+
         inference_config = {
             "temperature": chat_request.temperature,
-            "maxTokens": 131072 if "anthropic" in chat_request.model else 32768,
+            "maxTokens": tokens,
             "topP": chat_request.top_p
         }
 

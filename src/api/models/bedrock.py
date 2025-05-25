@@ -636,6 +636,8 @@ class BedrockModel(BaseChatModel):
         tokens = 32768
         if "anthropic" in chat_request.model:
             tokens = 131072
+        if "opus" in chat_request.model:
+            tokens = 32768 * 2
         if "llama4" in chat_request.model:
             tokens = 8192
 

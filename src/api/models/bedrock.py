@@ -330,7 +330,7 @@ class BedrockModel(BaseChatModel):
                             url = f"{parsed_url.scheme}://{parsed_url.netloc}{quote(parsed_url.path)}"
                             if parsed_url.query:
                                 url += f"?{parsed_url.query}"
-                            s += f"  * [{reference['title']}]({quote(reference['url'])})\n"
+                            s += f"  * [{reference['title']}]({url})\n"
                         stream_response.choices[0].delta.content = s
                 if stream_response.choices[0].delta.content:
                     chat_reponse.append(stream_response.choices[0].delta.content)

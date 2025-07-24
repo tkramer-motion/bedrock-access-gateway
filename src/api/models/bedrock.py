@@ -324,13 +324,13 @@ class BedrockModel(BaseChatModel):
                     chat_reponse = []
                 if stream_response.choices[0].finish_reason == "stop":
                     if references:
-                        s = "\n\n##### References:"
+                        s = "\n\n##### References:\n"
                         for reference in references:
-                            x = urlparse(reference['url'])
-                            s += f"{x.scheme}://{x.netloc}{quote(x.path)}"
-                            if x.query:
-                                s += "f?{x.query}"
-                            s += "\n"
+                            parsed_url = urlparse(reference['url'])
+                            url = f"{parsed_url.scheme}://{parsed_url.netloc}{quote(parsed_url.path)}"
+                            if parsed_url.query:
+                                url += f"?{parsed_url.query}"
+                            s += f"  * [{reference['title']}]({quote(reference['url'])})\n"
                         stream_response.choices[0].delta.content = s
                 if stream_response.choices[0].delta.content:
                     chat_reponse.append(stream_response.choices[0].delta.content)

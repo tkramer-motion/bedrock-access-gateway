@@ -184,6 +184,9 @@ class BedrockModel(BaseChatModel):
                bedrock_agent_client.list_knowledge_bases()["knowledgeBaseSummaries"] if
                row["status"] in ("ACTIVE", "UPDATING")]
         message = args["messages"][-1]["content"][0].get("text", "")
+
+        references = []
+
         for kb in kbs:
             if f'@{kb["name"]}' in message.split():
                 logger.info(f"Using knowledge base {kb['name']} for text message: {message}")
@@ -201,6 +204,7 @@ class BedrockModel(BaseChatModel):
                 if DEBUG:
                     logger.info(f"Got search results of {[row['content']['text'] for row in retrieve_response['retrievalResults']]}")
                 for i, row in enumerate(retrieve_response['retrievalResults']):
+                    references.append({"title": row["metadata"]["'x-amz-kendra-document-title'"], "url": row["location"]['kendraDocumentLocation'][uri]})
                     args["messages"][-1]["content"].append({"document": {
                         'format': 'txt',
                         'name': f'string{i + 1}',
@@ -235,7 +239,7 @@ class BedrockModel(BaseChatModel):
         except Exception as e:
             logger.error(e)
             raise HTTPException(status_code=500, detail=str(e))
-        return response
+        return response, references
 
     def chat(self, chat_request: ChatRequest) -> ChatResponse:
         """Default implementation for Chat API."""
@@ -294,7 +298,7 @@ class BedrockModel(BaseChatModel):
 
     def chat_stream(self, chat_request: ChatRequest) -> AsyncIterable[bytes]:
         """Default implementation for Chat Stream API"""
-        response = self._invoke_bedrock(chat_request, stream=True)
+        response, references = self._invoke_bedrock(chat_request, stream=True)
         message_id = self.generate_message_id()
 
         toolUseId = None
@@ -318,7 +322,7 @@ class BedrockModel(BaseChatModel):
                 if stream_response.choices[0].finish_reason == "stop":
                     stream_response.choices[0].delta.content = "HAHA"
                     stream_response.choices[0].delta.annotations = [Annotation(type="url_citation", url_citation=UrlCitation(title="blah", url="https://github.com/open-webui/open-webui/discussions/12069"))]
-                    chat_reponse.append("HAHA")
+                    chat_reponse.append(f"\nReferences {references}")
                 if stream_response.choices[0].delta.content:
                     chat_reponse.append(stream_response.choices[0].delta.content)
 
@@ -1089,7 +1093,7 @@ def get_embeddings_model(model_id: str) -> BedrockEmbeddingsModel:
 
 if __name__ == "__main__":
     for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user",
-                                                                              content="Hi")],
+                                                                              content="@kb Hi")],
                                                         model='us.deepseek.r1-v1:0')):
         raw = chunk.decode()[6:]
         if not raw.startswith("[DONE]"):

@@ -322,11 +322,10 @@ class BedrockModel(BaseChatModel):
                     chat_reponse = []
                 if stream_response.choices[0].finish_reason == "stop":
                     if references:
-                        # s = "\n\n```markdown\n\n"
-                        s = "\n\n"
+                        s = "\n```html\n\n"
                         for reference in references:
-                            s += f"- [{reference['title']}]({reference['url']})\n"
-                        stream_response.choices[0].delta.content = s #+ "```"
+                            s += f"<a href='{reference['url']}'>{reference['title']}</a><br>"
+                        stream_response.choices[0].delta.content = s + "```"
                 if stream_response.choices[0].delta.content:
                     chat_reponse.append(stream_response.choices[0].delta.content)
 

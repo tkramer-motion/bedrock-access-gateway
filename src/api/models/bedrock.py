@@ -8,7 +8,7 @@ from abc import ABC
 from copy import deepcopy
 from functools import cache
 from typing import AsyncIterable, Iterable, Literal, Any
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import boto3
 # boto3.setup_default_session(profile_name='mldc')
@@ -324,9 +324,13 @@ class BedrockModel(BaseChatModel):
                     chat_reponse = []
                 if stream_response.choices[0].finish_reason == "stop":
                     if references:
-                        s = "\n\n"
+                        s = "\n\n##### References:"
                         for reference in references:
-                            s += f"  * [{reference['title']}]({quote(reference['url'])})\n"
+                            x = urlparse(reference['url'])
+                            s += f"{x.scheme}://{x.netloc}{quote(x.path)}"
+                            if x.query:
+                                s += "f?{x.query}"
+                            s += "\n"
                         stream_response.choices[0].delta.content = s
                 if stream_response.choices[0].delta.content:
                     chat_reponse.append(stream_response.choices[0].delta.content)

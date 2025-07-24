@@ -701,6 +701,7 @@ class BedrockModel(BaseChatModel):
             message.content = ""
             if content and "text" in content[0]:
                 message.content = content[0]["text"]
+                message.annotations = [Annotation(type="url_citation", url_citation=UrlCitation(title="blah", url="https://github.com/open-webui/open-webui/discussions/12069"))]
 
         response = ChatResponse(
             id=message_id,
@@ -1090,12 +1091,13 @@ def get_embeddings_model(model_id: str) -> BedrockEmbeddingsModel:
 
 
 if __name__ == "__main__":
-    for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user",
+    x = BedrockModel().chat(ChatRequest(messages=[UserMessage(name=None, role="user",
                                                                               content="@kb So if I have a bunch of ligands selected in Maestro, how can I use some sort of script to convert a pyrazole tautomer? To this manually, I have to edit the double and single bonds of the ring. This is getting repetitive, so I\u2019d like to script it. Perhaps it requires inputting a SMILES for the desired tautomer")],
-                                                        model='us.anthropic.claude-3-7-sonnet-20250219-v1:0')):
-        raw = chunk.decode()[6:]
-        if not raw.startswith("[DONE]"):
-            row = json.loads(raw)
-            print(row)
+                                                        model='us.anthropic.claude-3-7-sonnet-20250219-v1:0'))
+    print(x)
+        # raw = chunk.decode()[6:]
+        # if not raw.startswith("[DONE]"):
+        #     row = json.loads(raw)
+        #     print(row)
             # if "content" in row["choices"][0]["delta"]:
             #     print(row["choices"][0]["delta"]["content"], end="")

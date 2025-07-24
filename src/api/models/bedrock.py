@@ -311,12 +311,16 @@ class BedrockModel(BaseChatModel):
                 continue
             if DEBUG:
                 logger.info("Proxy response :" + stream_response.model_dump_json())
+
             if stream_response.choices:
                 if stream_response.choices[0].delta.role == "assistant":
                     chat_reponse = []
+                if stream_response.choices[0].finish_reason == "stop":
+                    stream_response.choices[0].delta.content = "HAHA"
+                    stream_response.choices[0].delta.annotations = [Annotation(type="url_citation", url_citation=UrlCitation(title="blah", url="https://github.com/open-webui/open-webui/discussions/12069"))]
+                    chat_reponse.append("HAHA")
                 if stream_response.choices[0].delta.content:
                     chat_reponse.append(stream_response.choices[0].delta.content)
-                    chat_reponse.append(stream_response.choices[0].delta.annotations)
 
                 if stream_response.choices[0].finish_reason == "tool_calls":
                     try:
@@ -701,7 +705,6 @@ class BedrockModel(BaseChatModel):
             message.content = ""
             if content and "text" in content[0]:
                 message.content = content[0]["text"]
-                message.annotations = [Annotation(type="url_citation", url_citation=UrlCitation(title="blah", url="https://github.com/open-webui/open-webui/discussions/12069"))]
 
         response = ChatResponse(
             id=message_id,
@@ -735,15 +738,12 @@ class BedrockModel(BaseChatModel):
         if DEBUG:
             logger.info("Bedrock response chunk: " + str(chunk))
 
-        logger.info("Adding annotations")
-
         finish_reason = None
         message = None
         usage = None
         if "messageStart" in chunk:
             message = ChatResponseMessage(
                 role=chunk["messageStart"]["role"],
-                annotations=[Annotation(type="url_citation", url_citation=UrlCitation(title="blah", url="https://github.com/open-webui/open-webui/discussions/12069"))],
                 content="",
             )
         if "contentBlockStart" in chunk:
@@ -753,7 +753,6 @@ class BedrockModel(BaseChatModel):
                 # first index is content
                 index = chunk["contentBlockStart"]["contentBlockIndex"] - 1
                 message = ChatResponseMessage(
-                    annotations=[Annotation(type="url_citation", url_citation=UrlCitation(title="blah", url="https://github.com/open-webui/open-webui/discussions/12069"))],
                     tool_calls=[
                         ToolCall(
                             index=index,
@@ -772,13 +771,11 @@ class BedrockModel(BaseChatModel):
                 # stream content
                 message = ChatResponseMessage(
                     content=delta["text"],
-                    annotations=[Annotation(type="url_citation", url_citation=UrlCitation(title="blah", url="https://github.com/open-webui/open-webui/discussions/12069"))],
                 )
             elif "toolUse" in delta:
                 # tool use
                 index = chunk["contentBlockDelta"]["contentBlockIndex"] - 1
                 message = ChatResponseMessage(
-                    annotations=[Annotation(type="url_citation", url_citation=UrlCitation(title="blah", url="https://github.com/open-webui/open-webui/discussions/12069"))],
                     tool_calls=[
                         ToolCall(
                             index=index,
@@ -1091,13 +1088,12 @@ def get_embeddings_model(model_id: str) -> BedrockEmbeddingsModel:
 
 
 if __name__ == "__main__":
-    x = BedrockModel().chat(ChatRequest(messages=[UserMessage(name=None, role="user",
-                                                                              content="@kb So if I have a bunch of ligands selected in Maestro, how can I use some sort of script to convert a pyrazole tautomer? To this manually, I have to edit the double and single bonds of the ring. This is getting repetitive, so I\u2019d like to script it. Perhaps it requires inputting a SMILES for the desired tautomer")],
-                                                        model='us.anthropic.claude-3-7-sonnet-20250219-v1:0'))
-    print(x)
-        # raw = chunk.decode()[6:]
-        # if not raw.startswith("[DONE]"):
-        #     row = json.loads(raw)
-        #     print(row)
-            # if "content" in row["choices"][0]["delta"]:
-            #     print(row["choices"][0]["delta"]["content"], end="")
+    for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user",
+                                                                              content="Hi")],
+                                                        model='us.deepseek.r1-v1:0')):
+        raw = chunk.decode()[6:]
+        if not raw.startswith("[DONE]"):
+            row = json.loads(raw)
+            print(row)
+            if "content" in row["choices"][0]["delta"]:
+                print(row["choices"][0]["delta"]["content"], end="")

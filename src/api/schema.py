@@ -122,7 +122,6 @@ class ChatResponseMessage(BaseModel):
     tool_calls: list[ToolCall] | None = None
     annotations: list[Annotation] | None = None
 
-
 class BaseChoice(BaseModel):
     index: int | None = 0
     finish_reason: str | None = None

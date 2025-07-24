@@ -204,7 +204,8 @@ class BedrockModel(BaseChatModel):
                 if DEBUG:
                     logger.info(f"Got search results of {[row['content']['text'] for row in retrieve_response['retrievalResults']]}")
                 for i, row in enumerate(retrieve_response['retrievalResults']):
-                    references.append({"title": row["metadata"]["'x-amz-kendra-document-title'"], "url": row["location"]['kendraDocumentLocation'][uri]})
+                    if "metadata" in row and "x-amz-kendra-document-title" in row["metadata"]:
+                        references.append({"title": row["metadata"]["x-amz-kendra-document-title"], "url": row["location"]['kendraDocumentLocation']["uri"]})
                     args["messages"][-1]["content"].append({"document": {
                         'format': 'txt',
                         'name': f'string{i + 1}',

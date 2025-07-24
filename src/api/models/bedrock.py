@@ -192,7 +192,7 @@ class BedrockModel(BaseChatModel):
                 logger.info(f"Using knowledge base {kb['name']} for text message: {message}")
                 retrieve_response = bedrock_agent_runtime.retrieve(
                     retrievalQuery={
-                        'text': message.replace(f'@{kb["name"]}', '')[:1000]
+                        'text': message.replace(f'@{kb["name"]}', '')[:998]
                     },
                     knowledgeBaseId=kb["knowledgeBaseId"],
                     retrievalConfiguration={

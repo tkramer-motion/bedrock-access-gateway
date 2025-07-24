@@ -8,6 +8,7 @@ from abc import ABC
 from copy import deepcopy
 from functools import cache
 from typing import AsyncIterable, Iterable, Literal, Any
+from urllib.parse import quote
 
 import boto3
 # boto3.setup_default_session(profile_name='mldc')
@@ -39,7 +40,7 @@ from api.schema import (
     EmbeddingsRequest,
     EmbeddingsResponse,
     EmbeddingsUsage,
-    Embedding, Annotation, UrlCitation, )
+    Embedding, )
 from api.setting import DEBUG, AWS_REGION
 
 logger = logging.getLogger(__name__)
@@ -140,7 +141,8 @@ def list_bedrock_models() -> dict:
     #     }
 
     # return model_list
-    return {'us.anthropic.claude-3-7-sonnet-20250219-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-opus-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-sonnet-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.meta.llama4-maverick-17b-instruct-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.deepseek.r1-v1:0': {'modalities': ['TEXT']}}
+    return {'us.anthropic.claude-3-7-sonnet-20250219-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-opus-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-sonnet-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']},
+            'us.meta.llama4-maverick-17b-instruct-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.deepseek.r1-v1:0': {'modalities': ['TEXT']}}
 
 
 # Initialize the model list.
@@ -324,7 +326,7 @@ class BedrockModel(BaseChatModel):
                     if references:
                         s = "\n\n"
                         for reference in references:
-                            s += f"  * [{reference['title']}]({reference['url']})\n"
+                            s += f"  * [{reference['title']}]({quote(reference['url'])})\n"
                         stream_response.choices[0].delta.content = s
                 if stream_response.choices[0].delta.content:
                     chat_reponse.append(stream_response.choices[0].delta.content)

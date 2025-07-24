@@ -322,7 +322,8 @@ class BedrockModel(BaseChatModel):
                 if stream_response.choices[0].finish_reason == "stop":
                     stream_response.choices[0].delta.content = "HAHA"
                     stream_response.choices[0].delta.annotations = [Annotation(type="url_citation", url_citation=UrlCitation(title="blah", url="https://github.com/open-webui/open-webui/discussions/12069"))]
-                    chat_reponse.append(f"\nReferences {references}")
+                    if references:
+                        chat_reponse.append(f"\n\nReferences: {references}")
                 if stream_response.choices[0].delta.content:
                     chat_reponse.append(stream_response.choices[0].delta.content)
 

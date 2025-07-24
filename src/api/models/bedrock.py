@@ -733,12 +733,15 @@ class BedrockModel(BaseChatModel):
         if DEBUG:
             logger.info("Bedrock response chunk: " + str(chunk))
 
+        logger.info("Adding annotations")
+
         finish_reason = None
         message = None
         usage = None
         if "messageStart" in chunk:
             message = ChatResponseMessage(
                 role=chunk["messageStart"]["role"],
+                annotations=[Annotation(type="url_citation", url_citation=UrlCitation(title="blah", url="https://github.com/open-webui/open-webui/discussions/12069"))],
                 content="",
             )
         if "contentBlockStart" in chunk:
@@ -748,6 +751,7 @@ class BedrockModel(BaseChatModel):
                 # first index is content
                 index = chunk["contentBlockStart"]["contentBlockIndex"] - 1
                 message = ChatResponseMessage(
+                    annotations=[Annotation(type="url_citation", url_citation=UrlCitation(title="blah", url="https://github.com/open-webui/open-webui/discussions/12069"))],
                     tool_calls=[
                         ToolCall(
                             index=index,
@@ -772,6 +776,7 @@ class BedrockModel(BaseChatModel):
                 # tool use
                 index = chunk["contentBlockDelta"]["contentBlockIndex"] - 1
                 message = ChatResponseMessage(
+                    annotations=[Annotation(type="url_citation", url_citation=UrlCitation(title="blah", url="https://github.com/open-webui/open-webui/discussions/12069"))],
                     tool_calls=[
                         ToolCall(
                             index=index,

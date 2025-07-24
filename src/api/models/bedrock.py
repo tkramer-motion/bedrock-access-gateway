@@ -39,7 +39,7 @@ from api.schema import (
     EmbeddingsRequest,
     EmbeddingsResponse,
     EmbeddingsUsage,
-    Embedding, Annotation, UrlCitation, )
+    Embedding, )
 from api.setting import DEBUG, AWS_REGION
 
 logger = logging.getLogger(__name__)
@@ -140,7 +140,8 @@ def list_bedrock_models() -> dict:
     #     }
 
     # return model_list
-    return {'us.anthropic.claude-3-7-sonnet-20250219-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-opus-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-sonnet-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.meta.llama4-maverick-17b-instruct-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.deepseek.r1-v1:0': {'modalities': ['TEXT']}}
+    return {'us.anthropic.claude-3-7-sonnet-20250219-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-opus-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-sonnet-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']},
+            'us.meta.llama4-maverick-17b-instruct-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.deepseek.r1-v1:0': {'modalities': ['TEXT']}}
 
 
 # Initialize the model list.
@@ -322,7 +323,10 @@ class BedrockModel(BaseChatModel):
                     chat_reponse = []
                 if stream_response.choices[0].finish_reason == "stop":
                     if references:
-                        stream_response.choices[0].delta.content = f"\n\nReferences: {references}"
+                        s = "\n\n"
+                        for reference in references:
+                            s += f"<a href='{reference['url']}'>{reference['title']}</a><br>"
+                        stream_response.choices[0].delta.content = s
                 if stream_response.choices[0].delta.content:
                     chat_reponse.append(stream_response.choices[0].delta.content)
 

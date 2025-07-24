@@ -316,6 +316,7 @@ class BedrockModel(BaseChatModel):
                     chat_reponse = []
                 if stream_response.choices[0].delta.content:
                     chat_reponse.append(stream_response.choices[0].delta.content)
+                    chat_reponse.append(stream_response.choices[0].delta.annotations)
 
                 if stream_response.choices[0].finish_reason == "tool_calls":
                     try:

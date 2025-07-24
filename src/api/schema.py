@@ -107,12 +107,20 @@ class Usage(BaseModel):
     completion_tokens: int
     total_tokens: int
 
+class UrlCitation(BaseModel):
+    title: str
+    url: str
+
+class Annotation(BaseModel):
+    type: Literal["url_citation"] = "url_citation"
+    url_citation: UrlCitation
 
 class ChatResponseMessage(BaseModel):
     # tool_calls
     role: Literal["assistant"] | None = None
     content: str | None = None
     tool_calls: list[ToolCall] | None = None
+    annotations: list[Annotation] | None = None
 
 
 class BaseChoice(BaseModel):

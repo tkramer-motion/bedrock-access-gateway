@@ -10,6 +10,7 @@ from functools import cache
 from typing import AsyncIterable, Iterable, Literal, Any
 
 import boto3
+# boto3.setup_default_session(profile_name='mldc')
 import numpy as np
 import requests
 import tiktoken
@@ -38,7 +39,7 @@ from api.schema import (
     EmbeddingsRequest,
     EmbeddingsResponse,
     EmbeddingsUsage,
-    Embedding, )
+    Embedding, Annotation, UrlCitation, )
 from api.setting import DEBUG, AWS_REGION
 
 logger = logging.getLogger(__name__)
@@ -765,6 +766,7 @@ class BedrockModel(BaseChatModel):
                 # stream content
                 message = ChatResponseMessage(
                     content=delta["text"],
+                    annotations=[Annotation(type="url_citation", url_citation=UrlCitation(title="blah", url="https://github.com/open-webui/open-webui/discussions/12069"))],
                 )
             elif "toolUse" in delta:
                 # tool use
@@ -1084,9 +1086,10 @@ def get_embeddings_model(model_id: str) -> BedrockEmbeddingsModel:
 if __name__ == "__main__":
     for chunk in BedrockModel().chat_stream(ChatRequest(messages=[UserMessage(name=None, role="user",
                                                                               content="@kb So if I have a bunch of ligands selected in Maestro, how can I use some sort of script to convert a pyrazole tautomer? To this manually, I have to edit the double and single bonds of the ring. This is getting repetitive, so I\u2019d like to script it. Perhaps it requires inputting a SMILES for the desired tautomer")],
-                                                        model='us.deepseek.r1-v1:0')):
+                                                        model='us.anthropic.claude-3-7-sonnet-20250219-v1:0')):
         raw = chunk.decode()[6:]
         if not raw.startswith("[DONE]"):
             row = json.loads(raw)
-            if "content" in row["choices"][0]["delta"]:
-                print(row["choices"][0]["delta"]["content"], end="")
+            print(row)
+            # if "content" in row["choices"][0]["delta"]:
+            #     print(row["choices"][0]["delta"]["content"], end="")

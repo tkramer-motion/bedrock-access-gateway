@@ -248,7 +248,7 @@ class BedrockModel(BaseChatModel):
         """Default implementation for Chat API."""
 
         message_id = self.generate_message_id()
-        response = self._invoke_bedrock(chat_request)
+        response, references = self._invoke_bedrock(chat_request)
 
         output_message = response["output"]["message"]
         input_tokens = response["usage"]["inputTokens"]

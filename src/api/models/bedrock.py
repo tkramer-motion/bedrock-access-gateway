@@ -208,11 +208,12 @@ class BedrockModel(BaseChatModel):
                     logger.info(f"Got search results of {[row['content']['text'] for row in retrieve_response['retrievalResults']]}")
 
                 reference_data = dict()
+                references = dict()
 
                 for i, row in enumerate(retrieve_response['retrievalResults']):
                     if row["score"] >= .5:
                         if "metadata" in row and "x-amz-kendra-document-title" in row["metadata"]:
-                            references.append({"title": row["metadata"]["x-amz-kendra-document-title"], "url": row["location"]['kendraDocumentLocation']["uri"]})
+                            references[row["metadata"]["x-amz-kendra-document-title"]] = {"title": row["metadata"]["x-amz-kendra-document-title"], "url": row["location"]['kendraDocumentLocation']["uri"]}
                             reference_data[row["metadata"]["x-amz-kendra-document-title"]] = row['content']['text'].strip()
 
                 if len(reference_data) <= 5:
@@ -259,7 +260,7 @@ class BedrockModel(BaseChatModel):
         except Exception as e:
             logger.error(e)
             raise HTTPException(status_code=500, detail=str(e))
-        return response, references
+        return response, list(references.values())
 
     def chat(self, chat_request: ChatRequest) -> ChatResponse:
         """Default implementation for Chat API."""

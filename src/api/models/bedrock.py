@@ -11,6 +11,7 @@ from typing import AsyncIterable, Iterable, Literal, Any
 from urllib.parse import quote, urlparse
 
 import boto3
+
 # boto3.setup_default_session(profile_name='mldc')
 import numpy as np
 import requests
@@ -199,23 +200,39 @@ class BedrockModel(BaseChatModel):
                     knowledgeBaseId=kb["knowledgeBaseId"],
                     retrievalConfiguration={
                         'vectorSearchConfiguration': {
-                            'numberOfResults': 5,
+                            'numberOfResults': 50,
                         }
                     }
                 )
                 if DEBUG:
                     logger.info(f"Got search results of {[row['content']['text'] for row in retrieve_response['retrievalResults']]}")
+
+                reference_data = dict()
+
                 for i, row in enumerate(retrieve_response['retrievalResults']):
-                    if "metadata" in row and "x-amz-kendra-document-title" in row["metadata"]:
-                        references.append({"title": row["metadata"]["x-amz-kendra-document-title"], "url": row["location"]['kendraDocumentLocation']["uri"]})
+                    if row["score"] >= .5:
+                        if "metadata" in row and "x-amz-kendra-document-title" in row["metadata"]:
+                            references.append({"title": row["metadata"]["x-amz-kendra-document-title"], "url": row["location"]['kendraDocumentLocation']["uri"]})
+                            reference_data[row["metadata"]["x-amz-kendra-document-title"]] = row['content']['text'].strip()
+
+                if len(reference_data) <= 5:
+                    for title, rows in reference_data.items():
+                        args["messages"][-1]["content"].append({"document": {
+                            'format': 'txt',
+                            'name': title,
+                            'source': {
+                                'bytes': "\n".join(rows).encode()
+                            }
+                        }
+                        })
+                else:
                     args["messages"][-1]["content"].append({"document": {
                         'format': 'txt',
-                        'name': f'string{i + 1}',
+                        'name': "combined",
                         'source': {
-                            'bytes': row['content']['text'].strip().encode()
+                            'bytes': "\n".join(reference_data.values()).encode()
                         }
-                    }
-                    })
+                    }})
 
         if "GUARDRAIL_IDENTIFIER" in os.environ:
             args["guardrailConfig"] = {

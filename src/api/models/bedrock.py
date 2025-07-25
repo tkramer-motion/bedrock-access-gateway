@@ -188,7 +188,8 @@ class BedrockModel(BaseChatModel):
                row["status"] in ("ACTIVE", "UPDATING")]
         message = args["messages"][-1]["content"][0].get("text", "")
 
-        references = []
+        reference_data = dict()
+        references = dict()
 
         for kb in kbs:
             if f'@{kb["name"]}' in message.split():
@@ -206,9 +207,6 @@ class BedrockModel(BaseChatModel):
                 )
                 if DEBUG:
                     logger.info(f"Got search results of {[row['content']['text'] for row in retrieve_response['retrievalResults']]}")
-
-                reference_data = dict()
-                references = dict()
 
                 for i, row in enumerate(retrieve_response['retrievalResults']):
                     if row["score"] >= .5:

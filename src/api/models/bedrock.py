@@ -142,7 +142,7 @@ def list_bedrock_models() -> dict:
     #     }
 
     # return model_list
-    return {'anthropic.claude-opus-4-5-20251101-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-3-7-sonnet-20250219-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-opus-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-sonnet-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']},
+    return {'global.anthropic.claude-opus-4-5-20251101-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-3-7-sonnet-20250219-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-opus-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-sonnet-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']},
             'us.meta.llama4-maverick-17b-instruct-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.deepseek.r1-v1:0': {'modalities': ['TEXT']}}
 
 

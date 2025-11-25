@@ -573,7 +573,32 @@ class BedrockModel(BaseChatModel):
                     }
                 )
             elif isinstance(message, dict):
-                messages.append(message)
+                # Handle dict messages with 'tool' role - convert to Bedrock format
+                if message.get("role") == "tool":
+                    tool_result = {
+                        "toolUseId": message.get("tool_call_id"),
+                    }
+                    content = message.get("content")
+                    status = message.get("status")
+                    data_type = message.get("data_type", "json")
+
+                    if status:
+                        tool_result["status"] = status
+                        tool_result["content"] = [{"text": content if isinstance(content, str) else json.dumps(content)}]
+                    else:
+                        if isinstance(content, str):
+                            try:
+                                content = json.loads(content)
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                        tool_result["content"] = [{data_type: content}]
+
+                    messages.append({
+                        "role": "user",
+                        "content": [{"toolResult": tool_result}]
+                    })
+                else:
+                    messages.append(message)
             else:
                 # ignore others, such as system messages
                 continue

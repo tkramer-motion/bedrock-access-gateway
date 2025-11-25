@@ -580,18 +580,22 @@ class BedrockModel(BaseChatModel):
                     }
                     content = message.get("content")
                     status = message.get("status")
-                    data_type = message.get("data_type", "json")
 
                     if status:
                         tool_result["status"] = status
                         tool_result["content"] = [{"text": content if isinstance(content, str) else json.dumps(content)}]
                     else:
+                        # Parse string content as JSON if possible
                         if isinstance(content, str):
                             try:
                                 content = json.loads(content)
                             except (json.JSONDecodeError, TypeError):
                                 pass
-                        tool_result["content"] = [{data_type: content}]
+                        # Bedrock "json" type requires a dict; use "text" for strings/other types
+                        if isinstance(content, dict):
+                            tool_result["content"] = [{"json": content}]
+                        else:
+                            tool_result["content"] = [{"text": content if isinstance(content, str) else json.dumps(content)}]
 
                     messages.append({
                         "role": "user",

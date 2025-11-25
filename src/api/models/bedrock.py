@@ -677,7 +677,7 @@ class BedrockModel(BaseChatModel):
         inference_config = {
             "temperature": chat_request.temperature,
             "maxTokens": tokens,
-            "topP": chat_request.top_p
+            # "topP": chat_request.top_p
         }
 
         if chat_request.stop is not None:

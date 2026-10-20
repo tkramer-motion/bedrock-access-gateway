@@ -409,13 +409,14 @@ class BedrockModel(BaseChatModel):
             elif "toolUse" in block:
                 tool_name = block["toolUse"]["name"]
                 toolUseId = block["toolUse"]["toolUseId"]
-                tool_args = block["toolUse"]["input"]
+                # A tool without parameters streams its input as "" rather than "{}"
+                tool_args = "".join(block["toolUse"]["input"])
 
                 try:
-                    function_args = json.loads("".join(tool_args)) if tool_args else {}
+                    function_args = json.loads(tool_args) if tool_args.strip() else {}
                 except Exception:
                     logger.exception(f"Error parsing tool_args for {tool_name}")
-                    yield self._stream_text(message_id, chat_request.model, f'\n```text\nAttempted to call tool {tool_name} with arguments: {"".join(tool_args)}\nI was unable to parse the JSON.```\n', "stop")
+                    yield self._stream_text(message_id, chat_request.model, f'\n```text\nAttempted to call tool {tool_name} with arguments: {tool_args}\nI was unable to parse the JSON.\n```\n', "stop")
                     yield self.stream_response_to_bytes()
                     return
 
@@ -437,7 +438,7 @@ class BedrockModel(BaseChatModel):
 
                 except Exception as e:
                     logger.exception(f"Error invoking tool {tool_name}")
-                    yield self._stream_text(message_id, chat_request.model, f'\n```text\nAttempted to call tool {tool_name} with arguments: {function_args}\nI got an exception {e}.```\n', "stop")
+                    yield self._stream_text(message_id, chat_request.model, f'\n```text\nAttempted to call tool {tool_name} with arguments: {function_args}\nI got an exception {e}.\n```\n', "stop")
                     yield self.stream_response_to_bytes()
                     return
 

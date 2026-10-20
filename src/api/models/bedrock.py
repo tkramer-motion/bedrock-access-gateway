@@ -465,12 +465,17 @@ class BedrockModel(BaseChatModel):
         )
 
         logger.info(f"Finished tool {tool_name} in {time.time() - t0} seconds")
-        return json.loads(response["Payload"].read().decode())
+        results = json.loads(response["Payload"].read().decode())
+        if "FunctionError" in response:
+            # The Lambda raised; its payload is the error, which the model gets back as a failed tool result
+            logger.error(f"Tool {tool_name} failed: {results}")
+            return {"success": False, "message": f"The tool failed with {results.get('errorType')}: {results.get('errorMessage')}"}
+        return results
 
     @staticmethod
     def _tool_message(tool_use_id: str, results: dict) -> ToolMessage:
-        if not results["success"]:
-            content = results["message"]
+        if not results.get("success"):
+            content = results.get("message", "The tool did not return a result.")
         elif results.get("data_type", "json") == "json":
             content = {"results": results["results"]}
         else:
@@ -482,7 +487,7 @@ class BedrockModel(BaseChatModel):
         return ToolMessage(
             tool_call_id=tool_use_id,
             content=content,
-            status=None if results["success"] else "error",
+            status=None if results.get("success") else "error",
             data_type=results.get("data_type", "json"))
 
     def _stream_text(self, message_id: str, model: str, content: str, finish_reason: str | None = None) -> bytes:

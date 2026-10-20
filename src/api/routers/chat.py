@@ -1,12 +1,14 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Body
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
 from api.auth import api_key_auth
 from api.models.bedrock import BedrockModel
 from api.schema import ChatRequest, ChatResponse, ChatStreamResponse
 from api.setting import DEFAULT_MODEL
+from api.streaming import keepalive_stream
 
 router = APIRouter(
     prefix="/chat",
@@ -39,7 +41,9 @@ async def chat_completions(
     model = BedrockModel()
     model.validate(chat_request)
     if chat_request.stream:
+        # Bedrock is called before the 200 headers go out, so a rejected request comes back as a normal HTTP error
+        chunks = await run_in_threadpool(model.chat_stream, chat_request)
         return StreamingResponse(
-            content=model.chat_stream(chat_request), media_type="text/event-stream"
+            content=keepalive_stream(chunks), media_type="text/event-stream"
         )
-    return model.chat(chat_request)
+    return await run_in_threadpool(model.chat, chat_request)

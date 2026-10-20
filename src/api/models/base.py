@@ -1,7 +1,7 @@
 import time
 import uuid
 from abc import ABC, abstractmethod
-from typing import AsyncIterable
+from typing import Iterator
 
 from api.schema import (
     # Chat
@@ -34,7 +34,7 @@ class BaseChatModel(ABC):
         pass
 
     @abstractmethod
-    def chat_stream(self, chat_request: ChatRequest) -> AsyncIterable[bytes]:
+    def chat_stream(self, chat_request: ChatRequest) -> Iterator[bytes]:
         """Handle a basic chat completion requests with stream response."""
         pass
 

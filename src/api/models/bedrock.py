@@ -7,7 +7,7 @@ import time
 from abc import ABC
 from copy import deepcopy
 from functools import cache
-from typing import AsyncIterable, Iterable, Literal, Any
+from typing import Iterable, Iterator, Literal, Any
 from urllib.parse import quote, urlparse
 
 import boto3
@@ -32,6 +32,7 @@ from api.schema import (
     TextContent,
     ToolCall,
     ChoiceDelta,
+    SystemMessage,
     UserMessage,
     AssistantMessage,
     ToolMessage,
@@ -83,6 +84,15 @@ SUPPORTED_BEDROCK_EMBEDDING_MODELS = {
 }
 
 ENCODER = tiktoken.get_encoding("cl100k_base")
+
+# Claude 5 models always think adaptively: they reject temperature/top_p, budget_tokens thinking and assistant prefill
+ADAPTIVE_THINKING_MODELS = ("anthropic.claude-opus-5-5",)
+
+THINKING_TAG = re.compile(r"(?<![\w@])@thinking\b")
+
+
+def uses_adaptive_thinking(model_id: str) -> bool:
+    return any(model in model_id for model in ADAPTIVE_THINKING_MODELS)
 
 
 def list_bedrock_models() -> dict:
@@ -142,7 +152,7 @@ def list_bedrock_models() -> dict:
     #     }
 
     # return model_list
-    return {'global.anthropic.claude-opus-4-5-20251101-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-3-7-sonnet-20250219-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-opus-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-sonnet-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']},
+    return {'global.anthropic.claude-opus-5-5': {'modalities': ['TEXT', 'IMAGE']}, 'global.anthropic.claude-opus-4-5-20251101-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-3-7-sonnet-20250219-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-opus-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-sonnet-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']},
             'us.meta.llama4-maverick-17b-instruct-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.deepseek.r1-v1:0': {'modalities': ['TEXT']}}
 
 
@@ -173,10 +183,12 @@ class BedrockModel(BaseChatModel):
 
     def _invoke_bedrock(self, chat_request: ChatRequest, stream=False):
         """Common logic for invoke bedrock models"""
+        # Image tool results and redacted thinking carry raw bytes, which model_dump_json() cannot encode
+        raw_request = json.dumps(chat_request.model_dump(), default=str)
         if DEBUG:
-            logger.info("Raw request: " + chat_request.model_dump_json())
+            logger.info("Raw request: " + raw_request)
 
-        logger.info(f"LENGTH OF REQUEST: {len(chat_request.model_dump_json())}")
+        logger.info(f"LENGTH OF REQUEST: {len(raw_request)}")
 
         # convert OpenAI chat request to Bedrock SDK request
         args = self._parse_request(chat_request)
@@ -186,7 +198,8 @@ class BedrockModel(BaseChatModel):
         kbs = [{"name": row["name"], "knowledgeBaseId": row["knowledgeBaseId"]} for row in
                bedrock_agent_client.list_knowledge_bases()["knowledgeBaseSummaries"] if
                row["status"] in ("ACTIVE", "UPDATING")]
-        message = args["messages"][-1]["content"][0].get("text", "")
+        last_content = args["messages"][-1]["content"] if args["messages"] else []
+        message = last_content[0].get("text", "") if last_content else ""
 
         reference_data = dict()
         references = dict()
@@ -240,13 +253,6 @@ class BedrockModel(BaseChatModel):
                 'trace': 'enabled'
             }
 
-        if "@thinking" in message.split():
-            args["additionalModelRequestFields"] = {
-                "thinking": {
-                    "type": "enabled",
-                    "budget_tokens": 10000
-                }
-            }
         try:
             if stream:
                 response = bedrock_runtime.converse_stream(**args)
@@ -272,35 +278,14 @@ class BedrockModel(BaseChatModel):
         finish_reason = response["stopReason"]
 
         if finish_reason == "tool_use":
-            for part in output_message["content"]:
-                if "toolUse" in part:
-                    tool = part["toolUse"]
-                    toolUseId = tool["toolUseId"]
-
-                    response = lambda_client.invoke(
-                        FunctionName=self.get_tool_map()[tool["name"]],
-                        InvocationType='RequestResponse',
-                        Payload=json.dumps(tool["input"]).encode(),
-                    )
-
-                    results = json.load(response["Payload"])
-
-                    if not results["success"]:
-                        content = results["message"]
-                    elif results.get("data_type", "json") == "json":
-                        content = {"results": results["results"]}
-                    else:
-                        content = results["results"]
-                        if results.get("data_type") == "image":
-                            content["source"]["bytes"] = base64.b64decode(results["results"]["source"]["bytes"])
-
-                    args = chat_request.model_dump()
-                    del args["messages"]
-                    args["messages"] = chat_request.messages + [output_message, ToolMessage(
-                        tool_call_id=toolUseId,
-                        content=content, status=None if results["success"] else "error",
-                        data_type=results.get("data_type", "json"))]
-                    return self.chat(ChatRequest(**args))
+            # Every toolUse block needs a toolResult in the next turn
+            tool_results = [
+                self._tool_message(part["toolUse"]["toolUseId"], self._invoke_tool(part["toolUse"]["name"], part["toolUse"]["input"]))
+                for part in output_message["content"] if "toolUse" in part
+            ]
+            args = chat_request.model_dump()
+            args["messages"] = chat_request.messages + [output_message] + tool_results
+            return self.chat(ChatRequest(**args))
 
         chat_response = self._create_response(
             model=chat_request.model,
@@ -315,17 +300,24 @@ class BedrockModel(BaseChatModel):
 
         return chat_response
 
-    def chat_stream(self, chat_request: ChatRequest) -> AsyncIterable[bytes]:
-        """Default implementation for Chat Stream API"""
+    def chat_stream(self, chat_request: ChatRequest) -> Iterator[bytes]:
+        """Default implementation for Chat Stream API.
+
+        Bedrock is called right away; only reading its stream is deferred to the returned generator.
+        """
         response, references = self._invoke_bedrock(chat_request, stream=True)
+        return self._stream_response(chat_request, response, references)
+
+    def _stream_response(self, chat_request: ChatRequest, response: dict, references: list[dict]) -> Iterator[bytes]:
         message_id = self.generate_message_id()
 
-        # Track multiple parallel tool calls by index
-        tool_calls_by_index: dict[int, dict] = {}  # {index: {"id": ..., "name": ..., "args": []}}
-        chat_reponse = []
+        # The assistant turn's Converse content blocks by contentBlockIndex, replayed verbatim if it ends in tool use
+        blocks: dict[int, dict] = {}
 
+        tool_use = False
         stream = response.get("stream")
         for chunk in stream:
+            self._collect_content_block(blocks, chunk)
             stream_response = self._create_response_stream(
                 model_id=chat_request.model, message_id=message_id, chunk=chunk
             )
@@ -335,8 +327,6 @@ class BedrockModel(BaseChatModel):
                 logger.info("Proxy response :" + stream_response.model_dump_json())
 
             if stream_response.choices:
-                if stream_response.choices[0].delta.role == "assistant":
-                    chat_reponse = []
                 if stream_response.choices[0].finish_reason == "stop":
                     if references:
                         s = "\n\n##### References:\n"
@@ -347,142 +337,17 @@ class BedrockModel(BaseChatModel):
                                 url += f"?{parsed_url.query}"
                             s += f"  * [{reference['title']}]({url})\n"
                         stream_response.choices[0].delta.content = s
-                if stream_response.choices[0].delta.content:
-                    chat_reponse.append(stream_response.choices[0].delta.content)
 
                 if stream_response.choices[0].finish_reason == "tool_calls":
-                    # Process all accumulated tool calls
-                    args = chat_request.model_dump()
-                    del args["messages"]
-                    new_content = []
-                    if chat_reponse:
-                        new_content.append({'text': "".join(chat_reponse)})
-
-                    tool_results = []
-
-                    for tool_index in sorted(tool_calls_by_index.keys()):
-                        tool_info = tool_calls_by_index[tool_index]
-                        tool_name = tool_info.get("name")
-                        toolUseId = tool_info.get("id")
-                        tool_args = tool_info.get("args", [])
-
-                        try:
-                            function_args = json.loads("".join(tool_args)) if tool_args else {}
-                        except Exception:
-                            logger.exception(f"Error parsing tool_args for {tool_name}")
-                            yield self.stream_response_to_bytes(ChatStreamResponse(
-                                id=message_id,
-                                model=chat_request.model,
-                                choices=[
-                                    ChoiceDelta(
-                                        index=0,
-                                        delta=ChatResponseMessage(role="assistant", content=f'\n```text\nAttempted to call tool {tool_name} with arguments: {"".join(tool_args)}\nI was unable to parse the JSON.```\n'),
-                                        logprobs=None,
-                                        finish_reason="stop",
-                                    )
-                                ],
-                            ))
-                            yield self.stream_response_to_bytes()
-                            return
-
-                        try:
-                            t0 = time.time()
-                            logger.info(f"Invoking tool {tool_name} with {function_args} and lambda {self.get_tool_map().get(tool_name)}")
-
-                            response = lambda_client.invoke(
-                                FunctionName=self.get_tool_map()[tool_name],
-                                InvocationType='RequestResponse',
-                                Payload=json.dumps(function_args).encode(),
-                            )
-
-                            logger.info(f"Finished tool {tool_name} in {time.time() - t0} seconds")
-
-                            raw_results = response["Payload"].read().decode()
-                            results = json.loads(raw_results)
-
-                            if not results["success"]:
-                                content = results["message"]
-                            elif results.get("data_type", "json") == "json":
-                                content = {"results": results["results"]}
-                            else:
-                                content = results["results"]
-                                if results.get("data_type") == "image":
-                                    content["source"]["bytes"] = base64.b64decode(results["results"]["source"]["bytes"])
-
-                            # Add toolUse to assistant message content
-                            new_content.append({'toolUse': {'input': function_args, 'name': tool_name, 'toolUseId': toolUseId}})
-
-                            # Collect tool result
-                            tool_results.append(ToolMessage(
-                                tool_call_id=toolUseId,
-                                content=content,
-                                status=None if results["success"] else "error",
-                                data_type=results.get("data_type", "json")
-                            ))
-
-                            if results.get("success", False):
-                                if results.get("markdown_format", "json") != "json" or len(json.dumps(results["results"])) < 4000:
-                                    logger.info(f"Returning tool response of size {len(json.dumps(results['results']))}")
-                                    yield self.stream_response_to_bytes(ChatStreamResponse(
-                                        id=message_id,
-                                        model=chat_request.model,
-                                        choices=[
-                                            ChoiceDelta(
-                                                index=0,
-                                                delta=ChatResponseMessage(role="assistant", content=f'\n```{results.get("markdown_format", "json")}\n{results["results"]}\n```\n'),
-                                                logprobs=None,
-                                                finish_reason=None,
-                                            )
-                                        ],
-                                    ))
-
-                        except Exception as e:
-                            yield self.stream_response_to_bytes(ChatStreamResponse(
-                                id=message_id,
-                                model=chat_request.model,
-                                choices=[
-                                    ChoiceDelta(
-                                        index=0,
-                                        delta=ChatResponseMessage(role="assistant", content=f'\n```text\nAttempted to call tool {tool_name} with arguments: {function_args}\nI got an exception {e}.```\n'),
-                                        logprobs=None,
-                                        finish_reason="stop",
-                                    )
-                                ],
-                            ))
-                            yield self.stream_response_to_bytes()
-                            return
-
-                    # Build the new messages with all tool uses and results
-                    args["messages"] = chat_request.messages + [{'content': new_content, 'role': 'assistant'}] + tool_results
-
-                    if DEBUG:
-                        logger.info(f"Calling chat_stream with ********{args}*********")
-
-                    yield self.stream_response_to_bytes()
-                    yield from self.chat_stream(ChatRequest(**args))
-                    return
-
-                elif stream_response.choices[0].delta.tool_calls:
-                    tool: ToolCall = stream_response.choices[0].delta.tool_calls[0]
-                    tool_index = tool.index if tool.index is not None else 0
-
-                    # Initialize tool entry if new
-                    if tool_index not in tool_calls_by_index:
-                        tool_calls_by_index[tool_index] = {"id": None, "name": None, "args": []}
-
-                    if tool.id is not None:
-                        tool_calls_by_index[tool_index]["id"] = tool.id
-                    if tool.function:
-                        if tool.function.name:
-                            tool_calls_by_index[tool_index]["name"] = tool.function.name
-                            logger.info(f"Using tool {tool.function.name} at index {tool_index}")
-                        if tool.function.arguments:
-                            tool_calls_by_index[tool_index]["args"].append(tool.function.arguments)
+                    # Read the rest of this stream (its usage metadata) so the connection is released before the tools run
+                    tool_use = True
+                    continue
 
                 yield self.stream_response_to_bytes(stream_response)
             elif (
                     chat_request.stream_options
                     and chat_request.stream_options.include_usage
+                    and not tool_use
             ):
                 # An empty choices for Usage as per OpenAI doc below:
                 # if you set stream_options: {"include_usage": true}.
@@ -492,8 +357,146 @@ class BedrockModel(BaseChatModel):
                 # All other chunks will also include a usage field, but with a null value.
                 yield self.stream_response_to_bytes(stream_response)
 
+        if tool_use:
+            # The gateway runs the tools itself, so tool calls are never streamed to the client
+            yield from self._run_tools(chat_request, message_id, blocks)
+            return
+
         # return an [DONE] message at the end.
         yield self.stream_response_to_bytes()
+
+    @staticmethod
+    def _collect_content_block(blocks: dict[int, dict], chunk: dict):
+        if "contentBlockStart" in chunk:
+            start = chunk["contentBlockStart"]["start"]
+            if "toolUse" in start:
+                blocks[chunk["contentBlockStart"]["contentBlockIndex"]] = {
+                    "toolUse": {"toolUseId": start["toolUse"]["toolUseId"], "name": start["toolUse"]["name"], "input": []}
+                }
+        elif "contentBlockDelta" in chunk:
+            index = chunk["contentBlockDelta"]["contentBlockIndex"]
+            delta = chunk["contentBlockDelta"]["delta"]
+            if "text" in delta:
+                blocks.setdefault(index, {"text": []})["text"].append(delta["text"])
+            elif "toolUse" in delta:
+                blocks[index]["toolUse"]["input"].append(delta["toolUse"]["input"])
+            elif "reasoningContent" in delta:
+                reasoning = blocks.setdefault(index, {"reasoningContent": {"text": [], "signature": None, "redactedContent": None}})["reasoningContent"]
+                reasoning["text"].append(delta["reasoningContent"].get("text", ""))
+                if "signature" in delta["reasoningContent"]:
+                    reasoning["signature"] = delta["reasoningContent"]["signature"]
+                if "redactedContent" in delta["reasoningContent"]:
+                    reasoning["redactedContent"] = delta["reasoningContent"]["redactedContent"]
+
+    def _run_tools(self, chat_request: ChatRequest, message_id: str, blocks: dict[int, dict]) -> Iterator[bytes]:
+        """Run the tools the model asked for, then stream its next turn."""
+        assistant_content = []
+        tool_results = []
+
+        for index in sorted(blocks):
+            block = blocks[index]
+            if "text" in block:
+                text = "".join(block["text"])
+                if text.strip():
+                    assistant_content.append({"text": text})
+            elif "reasoningContent" in block:
+                # Thinking is passed back unmodified so the model continues from it instead of thinking again
+                reasoning = block["reasoningContent"]
+                if reasoning["redactedContent"] is not None:
+                    assistant_content.append({"reasoningContent": {"redactedContent": reasoning["redactedContent"]}})
+                elif reasoning["signature"]:
+                    assistant_content.append({"reasoningContent": {"reasoningText": {"text": "".join(reasoning["text"]), "signature": reasoning["signature"]}}})
+            elif "toolUse" in block:
+                tool_name = block["toolUse"]["name"]
+                toolUseId = block["toolUse"]["toolUseId"]
+                tool_args = block["toolUse"]["input"]
+
+                try:
+                    function_args = json.loads("".join(tool_args)) if tool_args else {}
+                except Exception:
+                    logger.exception(f"Error parsing tool_args for {tool_name}")
+                    yield self._stream_text(message_id, chat_request.model, f'\n```text\nAttempted to call tool {tool_name} with arguments: {"".join(tool_args)}\nI was unable to parse the JSON.```\n', "stop")
+                    yield self.stream_response_to_bytes()
+                    return
+
+                try:
+                    results = self._invoke_tool(tool_name, function_args)
+
+                    # Add toolUse to assistant message content
+                    assistant_content.append({'toolUse': {'input': function_args, 'name': tool_name, 'toolUseId': toolUseId}})
+
+                    # Collect tool result
+                    tool_results.append(self._tool_message(toolUseId, results))
+
+                    if results.get("success", False) and results.get("data_type") != "image":
+                        markdown_format = results.get("markdown_format", "json")
+                        rendered = json.dumps(results["results"], indent=2, default=str) if markdown_format == "json" else results["results"]
+                        if markdown_format != "json" or len(rendered) < 4000:
+                            logger.info(f"Returning tool response of size {len(rendered)}")
+                            yield self._stream_text(message_id, chat_request.model, f'\n```{markdown_format}\n{rendered}\n```\n')
+
+                except Exception as e:
+                    logger.exception(f"Error invoking tool {tool_name}")
+                    yield self._stream_text(message_id, chat_request.model, f'\n```text\nAttempted to call tool {tool_name} with arguments: {function_args}\nI got an exception {e}.```\n', "stop")
+                    yield self.stream_response_to_bytes()
+                    return
+
+        # Build the new messages with all tool uses and results
+        args = chat_request.model_dump()
+        args["messages"] = chat_request.messages + [{'content': assistant_content, 'role': 'assistant'}] + tool_results
+
+        if DEBUG:
+            logger.info(f"Calling chat_stream with ********{args}*********")
+
+        # Separates this turn's text from the next one, and hands control back before the next Bedrock call,
+        # so a client that left while the tools ran stops the loop here
+        yield self._stream_text(message_id, chat_request.model, "\n\n")
+        yield from self.chat_stream(ChatRequest(**args))
+
+    def _invoke_tool(self, tool_name: str, tool_input: dict) -> dict:
+        t0 = time.time()
+        logger.info(f"Invoking tool {tool_name} with {tool_input} and lambda {self.get_tool_map().get(tool_name)}")
+
+        response = lambda_client.invoke(
+            FunctionName=self.get_tool_map()[tool_name],
+            InvocationType='RequestResponse',
+            Payload=json.dumps(tool_input).encode(),
+        )
+
+        logger.info(f"Finished tool {tool_name} in {time.time() - t0} seconds")
+        return json.loads(response["Payload"].read().decode())
+
+    @staticmethod
+    def _tool_message(tool_use_id: str, results: dict) -> ToolMessage:
+        if not results["success"]:
+            content = results["message"]
+        elif results.get("data_type", "json") == "json":
+            content = {"results": results["results"]}
+        else:
+            content = results["results"]
+            if results.get("data_type") == "image":
+                # Copy rather than mutate, so results stays JSON-serializable for the caller
+                content = {**content, "source": {**content["source"], "bytes": base64.b64decode(content["source"]["bytes"])}}
+
+        return ToolMessage(
+            tool_call_id=tool_use_id,
+            content=content,
+            status=None if results["success"] else "error",
+            data_type=results.get("data_type", "json"))
+
+    def _stream_text(self, message_id: str, model: str, content: str, finish_reason: str | None = None) -> bytes:
+        return self.stream_response_to_bytes(ChatStreamResponse(
+            id=message_id,
+            model=model,
+            choices=[
+                ChoiceDelta(
+                    index=0,
+                    delta=ChatResponseMessage(role="assistant", content=content),
+                    logprobs=None,
+                    finish_reason=finish_reason,
+                )
+            ],
+        ))
 
     def _parse_system_prompts(self, chat_request: ChatRequest) -> list[dict[str, str]]:
         """Create system prompts.
@@ -507,12 +510,13 @@ class BedrockModel(BaseChatModel):
 
         system_prompts = []
         for message in chat_request.messages:
-            if hasattr(message, "role") and message.role != "system":
-                # ignore system messages here
+            if not isinstance(message, SystemMessage):
                 continue
-            if hasattr(message, "content"):
-                assert isinstance(message.content, str)
-                system_prompts.append({"text": message.content})
+            if isinstance(message.content, str):
+                texts = [message.content]
+            else:
+                texts = [part.text for part in message.content]
+            system_prompts.extend({"text": text} for text in texts if text.strip())
 
         return system_prompts
 
@@ -540,38 +544,38 @@ class BedrockModel(BaseChatModel):
                     }
                 )
             elif isinstance(message, AssistantMessage):
-                if message.content:
-                    if message.content.startswith("This prompt goes against Relay Acceptable Use policy."):
-                        logger.info("Popping message to avoid poisoning thread")
-                        messages.pop()
-                        continue
-
-                    # Text message
-                    messages.append(
-                        {
-                            "role": message.role,
-                            "content": self._parse_content_parts(
-                                message, chat_request.model
-                            ),
-                        }
-                    )
+                if isinstance(message.content, str):
+                    text = message.content
                 else:
-                    # Tool use message
-                    tool_input = json.loads(message.tool_calls[0].function.arguments)
-                    messages.append(
+                    text = "".join(part.text for part in message.content or [] if isinstance(part, TextContent))
+                if text.startswith("This prompt goes against Relay Acceptable Use policy."):
+                    logger.info("Popping message to avoid poisoning thread")
+                    if messages:
+                        messages.pop()
+                    continue
+
+                # Text message, followed by any tool uses. Bedrock rejects blank text blocks.
+                content = []
+                if message.content:
+                    content = [part for part in self._parse_content_parts(message, chat_request.model)
+                               if "text" not in part or part["text"].strip()]
+                for tool_call in message.tool_calls or []:
+                    try:
+                        tool_input = json.loads(tool_call.function.arguments or "{}")
+                    except json.JSONDecodeError:
+                        logger.warning(f"Unable to parse arguments of tool call {tool_call.id}")
+                        tool_input = {}
+                    content.append(
                         {
-                            "role": message.role,
-                            "content": [
-                                {
-                                    "toolUse": {
-                                        "toolUseId": message.tool_calls[0].id,
-                                        "name": message.tool_calls[0].function.name,
-                                        "input": tool_input
-                                    }
-                                }
-                            ],
+                            "toolUse": {
+                                "toolUseId": tool_call.id,
+                                "name": tool_call.function.name,
+                                "input": tool_input if isinstance(tool_input, dict) else {}
+                            }
                         }
                     )
+                if content:
+                    messages.append({"role": message.role, "content": content})
             elif isinstance(message, ToolMessage):
                 # Bedrock does not support tool role,
                 # Add toolResult to content
@@ -720,6 +724,13 @@ class BedrockModel(BaseChatModel):
         messages = self._parse_messages(chat_request)
         system_prompts = self._parse_system_prompts(chat_request)
 
+        adaptive_thinking = uses_adaptive_thinking(chat_request.model)
+        thinking = "anthropic" in chat_request.model and bool(THINKING_TAG.search(self._last_user_text(chat_request)))
+
+        if adaptive_thinking and messages and messages[-1]["role"] == "assistant" and not any("toolUse" in part for part in messages[-1]["content"]):
+            # Claude 5 rejects assistant prefill, which is how Open WebUI's "Continue response" asks for more
+            messages.append({"role": "user", "content": [{"text": "Continue your previous response exactly where it stopped, without repeating anything."}]})
+
         # Base inference parameters.
 
         tokens = 32768
@@ -727,12 +738,16 @@ class BedrockModel(BaseChatModel):
             tokens = 131072
         if "llama4" in chat_request.model:
             tokens = 8192
+        if adaptive_thinking:
+            tokens = 64000
 
         inference_config = {
-            "temperature": chat_request.temperature,
             "maxTokens": tokens,
             # "topP": chat_request.top_p
         }
+        # Claude 5 rejects sampling parameters, and extended thinking requires the default temperature
+        if not adaptive_thinking and not thinking:
+            inference_config["temperature"] = chat_request.temperature
 
         if chat_request.stop is not None:
             stop = chat_request.stop
@@ -741,17 +756,38 @@ class BedrockModel(BaseChatModel):
             inference_config["stopSequences"] = stop
 
         config = {"modelId": chat_request.model, "messages": messages, "system": system_prompts, "inferenceConfig": inference_config}
-        for message in messages:
-            if '@tools' in message["content"][0].get("text", ""):
-                config["toolConfig"] = {
-                    "tools": self.get_tools_config()
+        if any('@tools' in part.get("text", "") for message in messages for part in message["content"]):
+            config["toolConfig"] = {
+                "tools": self.get_tools_config()
+            }
+        if thinking:
+            if adaptive_thinking:
+                # Claude 5 always thinks; @thinking raises the effort and streams a summary of the reasoning
+                config["additionalModelRequestFields"] = {
+                    "thinking": {"type": "adaptive", "display": "summarized"},
+                    "output_config": {"effort": "high"},
                 }
-                break
-        for message in messages:
-            if '@thinking' in message["content"][0].get("text", ""):
-                del config["inferenceConfig"]["topP"]
-                break
+            else:
+                config["additionalModelRequestFields"] = {
+                    "thinking": {
+                        "type": "enabled",
+                        "budget_tokens": 10000
+                    }
+                }
         return config
+
+    @staticmethod
+    def _last_user_text(chat_request: ChatRequest) -> str:
+        """Text of the last message the user typed. Tool continuations end with tool results, which are skipped."""
+        for message in reversed(chat_request.messages):
+            if isinstance(message, UserMessage):
+                if isinstance(message.content, str):
+                    text = message.content
+                else:
+                    text = " ".join(part.text for part in message.content if isinstance(part, TextContent))
+                if text.strip():
+                    return text
+        return ""
 
     def _create_response(
             self,
@@ -785,9 +821,8 @@ class BedrockModel(BaseChatModel):
             message.tool_calls = tool_calls
             message.content = None
         else:
-            message.content = ""
-            if content and "text" in content[0]:
-                message.content = content[0]["text"]
+            # Thinking models put a reasoning block ahead of the text
+            message.content = "".join(part["text"] for part in content or [] if "text" in part)
 
         response = ChatResponse(
             id=message_id,
@@ -829,25 +864,7 @@ class BedrockModel(BaseChatModel):
                 role=chunk["messageStart"]["role"],
                 content="",
             )
-        if "contentBlockStart" in chunk:
-            # tool call start
-            delta = chunk["contentBlockStart"]["start"]
-            if "toolUse" in delta:
-                # first index is content
-                index = chunk["contentBlockStart"]["contentBlockIndex"] - 1
-                message = ChatResponseMessage(
-                    tool_calls=[
-                        ToolCall(
-                            index=index,
-                            type="function",
-                            id=delta["toolUse"]["toolUseId"],
-                            function=ResponseFunction(
-                                name=delta["toolUse"]["name"],
-                                arguments="",
-                            ),
-                        )
-                    ]
-                )
+        # Tool use blocks are not streamed: the gateway runs the tools itself (see _collect_content_block)
         if "contentBlockDelta" in chunk:
             delta = chunk["contentBlockDelta"]["delta"]
             if "text" in delta:
@@ -855,18 +872,10 @@ class BedrockModel(BaseChatModel):
                 message = ChatResponseMessage(
                     content=delta["text"],
                 )
-            elif "toolUse" in delta:
-                # tool use
-                index = chunk["contentBlockDelta"]["contentBlockIndex"] - 1
+            elif delta.get("reasoningContent", {}).get("text"):
+                # Open WebUI shows reasoning_content as a collapsible thinking block
                 message = ChatResponseMessage(
-                    tool_calls=[
-                        ToolCall(
-                            index=index,
-                            function=ResponseFunction(
-                                arguments=delta["toolUse"]["input"],
-                            )
-                        )
-                    ]
+                    reasoning_content=delta["reasoningContent"]["text"],
                 )
         if "messageStop" in chunk:
             message = ChatResponseMessage()
@@ -1009,7 +1018,10 @@ class BedrockModel(BaseChatModel):
                 "max_tokens": "length",
                 "stop_sequence": "stop",
                 "complete": "stop",
-                "content_filtered": "content_filter"
+                "content_filtered": "content_filter",
+                "guardrail_intervened": "content_filter",
+                "refusal": "content_filter",
+                "model_context_window_exceeded": "length",
             }
             return finish_reason_mapping.get(finish_reason.lower(), finish_reason.lower())
         return None

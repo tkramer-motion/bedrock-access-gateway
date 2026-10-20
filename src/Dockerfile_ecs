@@ -10,4 +10,5 @@ COPY ./api /app/api
 
 ENV PORT=9067
 
-CMD ["sh", "-c", "uvicorn api.app:app --host 0.0.0.0 --port ${PORT}"]
+# Keep idle connections open longer than the ALB's 60s idle timeout, so the ALB never reuses a closed one
+CMD ["sh", "-c", "uvicorn api.app:app --host 0.0.0.0 --port ${PORT} --timeout-keep-alive 75"]

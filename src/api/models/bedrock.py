@@ -85,10 +85,22 @@ SUPPORTED_BEDROCK_EMBEDDING_MODELS = {
 
 ENCODER = tiktoken.get_encoding("cl100k_base")
 
-# Claude 5 models always think adaptively: they reject temperature/top_p, budget_tokens thinking and assistant prefill
-ADAPTIVE_THINKING_MODELS = ("anthropic.claude-opus-5-5",)
+# Claude Opus 4.8 and Claude 5 models think adaptively: they reject temperature/top_p, budget_tokens thinking and assistant prefill
+ADAPTIVE_THINKING_MODELS = ("anthropic.claude-opus-5-5", "anthropic.claude-opus-4-8")
 
 THINKING_TAG = re.compile(r"(?<![\w@])@thinking\b")
+
+# Bedrock's stop reasons when the model's safety classifiers decline a request
+REFUSAL_STOP_REASONS = ("content_filtered", "refusal")
+
+# Claude Opus 5.5's biology classifier can decline drug discovery data. Bedrock has no server-side fallback,
+# so the gateway retries a declined turn on the model Anthropic recommends, with a notice for the user.
+REFUSAL_FALLBACKS = {
+    "global.anthropic.claude-opus-5-5": (
+        "global.anthropic.claude-opus-4-8",
+        "Claude Opus 5.5's safety filter declined this request (it flags some biology and chemistry data), so Claude Opus 4.8 is answering instead.",
+    ),
+}
 
 
 def uses_adaptive_thinking(model_id: str) -> bool:
@@ -152,7 +164,7 @@ def list_bedrock_models() -> dict:
     #     }
 
     # return model_list
-    return {'global.anthropic.claude-opus-5-5': {'modalities': ['TEXT', 'IMAGE']}, 'global.anthropic.claude-opus-4-5-20251101-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-3-7-sonnet-20250219-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-opus-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-sonnet-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']},
+    return {'global.anthropic.claude-opus-5-5': {'modalities': ['TEXT', 'IMAGE']}, 'global.anthropic.claude-opus-4-8': {'modalities': ['TEXT', 'IMAGE']}, 'global.anthropic.claude-opus-4-5-20251101-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-3-7-sonnet-20250219-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-opus-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.anthropic.claude-sonnet-4-20250514-v1:0': {'modalities': ['TEXT', 'IMAGE']},
             'us.meta.llama4-maverick-17b-instruct-v1:0': {'modalities': ['TEXT', 'IMAGE']}, 'us.deepseek.r1-v1:0': {'modalities': ['TEXT']}}
 
 
@@ -277,6 +289,13 @@ class BedrockModel(BaseChatModel):
         output_tokens = response["usage"]["outputTokens"]
         finish_reason = response["stopReason"]
 
+        if finish_reason in REFUSAL_STOP_REASONS and chat_request.model in REFUSAL_FALLBACKS:
+            fallback_model, _ = REFUSAL_FALLBACKS[chat_request.model]
+            stop_details = response.get("additionalModelResponseFields", {}).get("stop_details")
+            logger.warning(f"{chat_request.model} declined the request ({stop_details}); retrying on {fallback_model}")
+            # The conversation goes over unchanged: Bedrock drops thinking blocks the fallback model can't read
+            return self.chat(chat_request.model_copy(update={"model": fallback_model}))
+
         if finish_reason == "tool_use":
             # Every toolUse block needs a toolResult in the next turn
             tool_results = [
@@ -315,9 +334,16 @@ class BedrockModel(BaseChatModel):
         blocks: dict[int, dict] = {}
 
         tool_use = False
+        # The messageStop of a turn the model declined, when another model can take it over
+        declined = None
         stream = response.get("stream")
         for chunk in stream:
             self._collect_content_block(blocks, chunk)
+            stop_reason = chunk.get("messageStop", {}).get("stopReason")
+            if stop_reason in REFUSAL_STOP_REASONS and chat_request.model in REFUSAL_FALLBACKS:
+                # Read the rest of this stream, then retry on the fallback model
+                declined = chunk["messageStop"]
+                continue
             stream_response = self._create_response_stream(
                 model_id=chat_request.model, message_id=message_id, chunk=chunk
             )
@@ -338,6 +364,10 @@ class BedrockModel(BaseChatModel):
                             s += f"  * [{reference['title']}]({url})\n"
                         stream_response.choices[0].delta.content = s
 
+                if stop_reason in REFUSAL_STOP_REASONS:
+                    # Open WebUI shows nothing for a content_filter finish
+                    stream_response.choices[0].delta.content = "\n\nThe model's safety filter declined this request."
+
                 if stream_response.choices[0].finish_reason == "tool_calls":
                     # Read the rest of this stream (its usage metadata) so the connection is released before the tools run
                     tool_use = True
@@ -348,6 +378,7 @@ class BedrockModel(BaseChatModel):
                     chat_request.stream_options
                     and chat_request.stream_options.include_usage
                     and not tool_use
+                    and declined is None
             ):
                 # An empty choices for Usage as per OpenAI doc below:
                 # if you set stream_options: {"include_usage": true}.
@@ -356,6 +387,18 @@ class BedrockModel(BaseChatModel):
                 # and the choices field will always be an empty array.
                 # All other chunks will also include a usage field, but with a null value.
                 yield self.stream_response_to_bytes(stream_response)
+
+        if declined is not None:
+            fallback_model, notice = REFUSAL_FALLBACKS[chat_request.model]
+            stop_details = declined.get("additionalModelResponseFields", {}).get("stop_details")
+            logger.warning(f"{chat_request.model} declined the request ({stop_details}); retrying on {fallback_model}")
+            # Close a code block the declined answer left open, or the notice and the new answer render inside it
+            streamed = "".join("".join(block["text"]) for block in blocks.values() if "text" in block)
+            fence = "\n```" if streamed.count("```") % 2 else ""
+            yield self._stream_text(message_id, chat_request.model, f"{fence}\n\n_{notice}_\n\n")
+            # The conversation goes over unchanged: Bedrock drops thinking blocks the fallback model can't read
+            yield from self.chat_stream(chat_request.model_copy(update={"model": fallback_model}))
+            return
 
         if tool_use:
             # The gateway runs the tools itself, so tool calls are never streamed to the client
@@ -766,9 +809,12 @@ class BedrockModel(BaseChatModel):
             config["toolConfig"] = {
                 "tools": self.get_tools_config()
             }
+        if chat_request.model in REFUSAL_FALLBACKS:
+            # The refusal category, logged when the model declines (Bedrock returns it to non-streaming calls only)
+            config["additionalModelResponseFieldPaths"] = ["/stop_details"]
         if thinking:
             if adaptive_thinking:
-                # Claude 5 always thinks; @thinking raises the effort and streams a summary of the reasoning
+                # @thinking raises the effort and streams a summary of the reasoning (Claude 5 thinks either way)
                 config["additionalModelRequestFields"] = {
                     "thinking": {"type": "adaptive", "display": "summarized"},
                     "output_config": {"effort": "high"},

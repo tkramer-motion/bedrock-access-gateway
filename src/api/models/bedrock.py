@@ -90,6 +90,10 @@ ADAPTIVE_THINKING_MODELS = ("anthropic.claude-opus-5-5", "anthropic.claude-opus-
 
 THINKING_TAG = re.compile(r"(?<![\w@])@thinking\b")
 
+# Open WebUI's background tasks (titles, tags, follow-ups) quote the chat history, and with it any @tools or @thinking.
+# Its RAG template also starts with "### Task:", but wraps a real user message around retrieved documents.
+TASK_PROMPT = re.compile(r"### Task:(?!\s*Respond to the user query using the provided context).*<chat_history>", re.DOTALL)
+
 # Bedrock's stop reasons when the model's safety classifiers decline a request
 REFUSAL_STOP_REASONS = ("content_filtered", "refusal")
 
@@ -773,8 +777,10 @@ class BedrockModel(BaseChatModel):
         messages = self._parse_messages(chat_request)
         system_prompts = self._parse_system_prompts(chat_request)
 
+        last_user_text = self._last_user_text(chat_request)
+        task = bool(TASK_PROMPT.match(last_user_text))
         adaptive_thinking = uses_adaptive_thinking(chat_request.model)
-        thinking = "anthropic" in chat_request.model and bool(THINKING_TAG.search(self._last_user_text(chat_request)))
+        thinking = "anthropic" in chat_request.model and not task and bool(THINKING_TAG.search(last_user_text))
 
         if adaptive_thinking and messages and messages[-1]["role"] == "assistant" and not any("toolUse" in part for part in messages[-1]["content"]):
             # Claude 5 rejects assistant prefill, which is how Open WebUI's "Continue response" asks for more
@@ -805,7 +811,7 @@ class BedrockModel(BaseChatModel):
             inference_config["stopSequences"] = stop
 
         config = {"modelId": chat_request.model, "messages": messages, "system": system_prompts, "inferenceConfig": inference_config}
-        if any('@tools' in part.get("text", "") for message in messages for part in message["content"]):
+        if not task and any('@tools' in part.get("text", "") for message in messages for part in message["content"]):
             config["toolConfig"] = {
                 "tools": self.get_tools_config()
             }
